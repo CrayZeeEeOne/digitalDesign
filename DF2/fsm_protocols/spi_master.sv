@@ -6,10 +6,10 @@ module spi_master #(
   output logic mosi, done, sck, cs
 );
   typedef enum logic [3:0] {
-    IDLE = 2'b0001,
-    RECORD = 2'b0010,
-    SHIFT = 2'b0100,
-    CHECK = 2'b1000 
+    IDLE = 4'b0001,
+    RECORD = 4'b0010,
+    SHIFT = 4'b0100,
+    CHECK = 4'b1000 
   } state_t;
 
   state_t current_state, next_state;
@@ -27,15 +27,15 @@ module spi_master #(
   always_comb begin
     next_state = current_state;
 
-    mosi = 0;
-    done = 0;
-    sck = 0;
-    cs = 1;
-    bit_index = 0;
-    shift_reg = data;
 
     case(current_state)
       IDLE: begin
+        mosi = 0;
+        done = 0;
+        sck = 0;
+        cs = 1;
+        bit_index = 0;
+        shift_reg = data;
         if (start) next_state = RECORD;
         else next_state = IDLE;
       end
@@ -60,6 +60,7 @@ module spi_master #(
         else begin
           next_state = SHIFT;
         end
+    
       end
     endcase
   end

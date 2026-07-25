@@ -1,5 +1,5 @@
 module spi_slave (
-  input logic mosi, cs, clk, sck, reset,
+  input logic start, mosi, cs, clk, sck, reset,
   output logic miso, done
 );
   parameter N = 4; 
