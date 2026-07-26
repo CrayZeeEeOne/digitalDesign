@@ -17,7 +17,7 @@ module spi_master #(
 
   logic [N-1:0] shift_reg, shift_reg_next;
 
-  logic [$clog2(N+1)-1:0] bit_index, bit_index_next;
+  logic [N-1:0] bit_index, bit_index_next;
 
   always_ff @(posedge clk or posedge reset) begin
     if (reset) begin
@@ -37,15 +37,15 @@ module spi_master #(
     shift_reg_next = shift_reg;
     bit_index_next = bit_index;
     
-    mosi = 0;
     done = 0;
-    sck = 0;
+    sck = 1;
     cs = 1;
 
     case (current_state)
-      IDLE:
+      IDLE: begin
         if (start) next_state = RECORD;
         else next_state = IDLE;
+      end
       RECORD: begin
         shift_reg_next = data;
         bit_index_next = N;
@@ -53,8 +53,7 @@ module spi_master #(
       end
       SHIFT: begin
         cs = 0;
-        sck = 1;
-        mosi = shift_reg[0];
+        sck = 0;
         shift_reg_next = shift_reg >> 1;
         bit_index_next = bit_index - 1;
 
@@ -70,4 +69,6 @@ module spi_master #(
       end
     endcase
   end
+
+  assign mosi = shift_reg[0];
 endmodule
