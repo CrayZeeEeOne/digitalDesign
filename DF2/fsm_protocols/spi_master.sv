@@ -75,13 +75,13 @@ module spi_master #(
         if (start) begin
           cs = 0;
           tx_shift_reg_next = data;
-          bit_index_next = N;
+          bit_index_next = N+1;
           next_state = RECORD;
         end
         else next_state = IDLE;
       RECORD: begin
         cs = 0;
-        if (~sck & sck_prev) begin //sck rising edge
+        if (sck & ~sck_prev) begin //sck rising edge
           rx_shift_reg_next[N-1] = miso;
           mosi_next = tx_shift_reg[0];
           bit_index_next--;
@@ -90,7 +90,7 @@ module spi_master #(
       end
       SHIFT: begin
         cs = 0;
-        if (sck & ~sck_prev) begin //sck falling edge
+        if (~sck & sck_prev) begin //sck falling edge
           tx_shift_reg_next = tx_shift_reg >> 1;
           rx_shift_reg_next = rx_shift_reg >> 1;
           next_state = RECORD;
