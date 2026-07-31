@@ -62,7 +62,7 @@ module spi_tb;
 
         reset = 1;
         start = 0;
-        tx_master = 4'b1011;
+        tx_master = 'h1101;
 
         #20;
         reset = 0;

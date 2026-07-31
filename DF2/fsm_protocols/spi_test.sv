@@ -29,6 +29,10 @@ logic [$clog2(N+1)-1:0] bit_index, bit_index_next;
 logic mosi_next;
 logic sck_prev;
 
+//////////////////////////////////////////////////////////
+// Registers
+//////////////////////////////////////////////////////////
+
 always_ff @(posedge clk or posedge reset) begin
     if (reset) begin
         current_state <= IDLE;
@@ -48,6 +52,10 @@ always_ff @(posedge clk or posedge reset) begin
     end
 end
 
+//////////////////////////////////////////////////////////
+// SCK generator
+//////////////////////////////////////////////////////////
+
 logic cnt;
 
 always_ff @(posedge clk or posedge reset) begin
@@ -57,6 +65,7 @@ always_ff @(posedge clk or posedge reset) begin
     end
     else if (!cs) begin
         cnt <= ~cnt;
+
         if (cnt)
             sck <= ~sck;
     end
@@ -65,6 +74,10 @@ always_ff @(posedge clk or posedge reset) begin
         sck <= 1'b0;
     end
 end
+
+//////////////////////////////////////////////////////////
+// FSM
+//////////////////////////////////////////////////////////
 
 always_comb begin
 
@@ -81,7 +94,9 @@ always_comb begin
 
     case (current_state)
 
+    //////////////////////////////////////////////////////
     IDLE:
+    //////////////////////////////////////////////////////
     begin
         if (start) begin
             cs = 0;
@@ -95,19 +110,24 @@ always_comb begin
 
             next_state = RECORD;
         end
-        else
-            next_state = IDLE;
     end
 
+    //////////////////////////////////////////////////////
+    // Sample MISO on rising edge
+    //////////////////////////////////////////////////////
     RECORD:
     begin
         cs = 0;
+
         if (sck && !sck_prev) begin
             rx_shift_reg_next[N-1] = miso;
             next_state = SHIFT;
         end
     end
 
+    //////////////////////////////////////////////////////
+    // Shift on falling edge
+    //////////////////////////////////////////////////////
     SHIFT:
     begin
         cs = 0;
@@ -121,6 +141,7 @@ always_comb begin
 
             if (bit_index == 1) begin
                 done = 1;
+                cs = 1;
                 next_state = IDLE;
             end
             else begin
