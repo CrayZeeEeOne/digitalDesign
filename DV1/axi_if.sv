@@ -28,7 +28,7 @@ interface axi_if #(
   logic wvalid;
   logic wlast;
   logic [DATA_BW-1:0] wdata;
-  logic [STR_B-1:0] wstrb;
+  logic [STRB_BW-1:0] wstrb;
   logic wready;
   //b
   logic [ID_BW-1:0] bid;
