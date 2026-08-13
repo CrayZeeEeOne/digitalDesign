@@ -46,7 +46,7 @@ module axi_mst #(
   logic aw_sent, w_sent;   
   
   always_ff @(posedge aclk or negedge arstn) begin
-    if (!arstn) current_state <= W_IDLE;
+    if (!arstn) current_state <= IDLE;
     else current_state <= next_state;
   end
   
@@ -68,9 +68,9 @@ module axi_mst #(
 
   always_ff @(posedge aclk) begin
     if (current_state == IDLE && start) begin
-      src_reg = src_addr;
-      dst_reg = dst_addr;
-      cfg_reg = cfg_select;
+      src_reg <= src_addr;
+      dst_reg <= dst_addr;
+      cfg_reg <= cfg_select;
     end
   end
 
@@ -108,7 +108,7 @@ module axi_mst #(
     if (!arstn) err <= 1'b0;
     else if (current_state == IDLE && start) err <= 1'b0;
     else if (r_hs && (mr_bus.rresp != 2'b00)) err <= 1'b1;
-    else if (b_hs && (mw_bus.bresp != 2'b00) err <= 1'b1;
+    else if (b_hs && (mw_bus.bresp != 2'b00)) err <= 1'b1;
   end
 
   //cl (filter)
@@ -127,7 +127,7 @@ module axi_mst #(
   
   assign mr_bus.arvalid = (current_state == R_ADDR);
   assign mr_bus.arid = '0;
-  assign mr_bus.araddr = src_addr;
+  assign mr_bus.araddr = src_reg;
   assign mr_bus.arlen = WIN_LEN;
   assign mr_bus.arsize = BEAT_SIZE;
   assign mr_bus.arburst = BURST_INCR;
@@ -135,11 +135,11 @@ module axi_mst #(
   assign mr_bus.arcache = 4'b0000;
   assign mr_bus.arprot = 3'b000;
   assign mr_bus.arqos = 4'b0000;
-  assign mr_bus.rready = (state == R_DATA);
+  assign mr_bus.rready = (current_state == R_DATA);
 
   assign mw_bus.awvalid = (current_state == W_XFER) && !aw_sent;
   assign mw_bus.awid = '0;
-  assign mw_bus.awaddr = dst_addr;
+  assign mw_bus.awaddr = dst_reg;
   assign mw_bus.awlen = 8'b0;
   assign mw_bus.awsize = BEAT_SIZE;
   assign mw_bus.awburst = BURST_INCR;
@@ -153,6 +153,6 @@ module axi_mst #(
   assign mw_bus.wstrb = '1;
   assign mw_bus.wlast = 1'b1;
 
-  assign mw_bus.bready = (state == W_RESP);
+  assign mw_bus.bready = (current_state == W_RESP);
 
 endmodule

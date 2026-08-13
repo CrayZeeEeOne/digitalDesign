@@ -88,12 +88,12 @@ module axi_slv #(
   logic [ADDR_BW-1:0] ar_addr;
   logic [ADDR_BW-1:0] ar_start;
   logic [7:0] r_cnt;
-  logic dec_err; //addr outsize of memory
+  logic r_dec_err; //addr outsize of memory
 
   always_ff @(posedge aclk or negedge arstn) begin
     if (!arstn) begin
       r_cnt <= '0;
-      dec_err <= 1'b0;
+      r_dec_err <= 1'b0;
     end
     else if (ar_hs) begin
       ar_id <= sr_bus.arid;
@@ -103,7 +103,7 @@ module axi_slv #(
       ar_addr <= sr_bus.araddr;
       ar_start <= sr_bus.araddr;
       r_cnt <= '0;
-      dec_err <= (sr_bus.araddr >> ADDR_LSB) >= MEM_DEPTH;
+      r_dec_err <= (sr_bus.araddr >> ADDR_LSB) >= MEM_DEPTH;
     end
     else if (r_hs) begin
       ar_addr <= next_addr(ar_addr, ar_start, ar_size, ar_len, ar_burst);
@@ -120,8 +120,8 @@ module axi_slv #(
   //outputs
   assign sr_bus.arready = (read_state == READ_IDLE);
   assign sr_bus.rvalid = (read_state == R);
-  assign sr_bus.rdata = dec_err ? '0 : mem[r_idx];
-  assign sr_bus.rresp = dec_err ? RESP_SLVERR : RESP_OKAY;
+  assign sr_bus.rdata = r_dec_err ? '0 : mem[r_idx];
+  assign sr_bus.rresp = r_dec_err ? RESP_SLVERR : RESP_OKAY;
   assign sr_bus.rlast = (r_cnt == ar_len);
   assign sr_bus.rid = ar_id;
 
@@ -193,13 +193,13 @@ module axi_slv #(
   logic [ADDR_BW-1:0] aw_addr;
   logic [ADDR_BW-1:0] aw_start;
   logic [7:0] w_cnt;
-  logic dec_err; //addr outsize of memory
+  logic w_dec_err;
   logic len_err; //wlast went through wrong beat
 
   always_ff @(posedge aclk or negedge arstn) begin
     if (!arstn) begin
       w_cnt <= '0;
-      dec_err <= 1'b0;
+      w_dec_err <= 1'b0;
       len_err <= 1'b0;
     end
     else if (aw_hs) begin
@@ -210,7 +210,7 @@ module axi_slv #(
       aw_addr <= sw_bus.awaddr;
       aw_start <= sw_bus.awaddr;
       w_cnt <= '0;
-      dec_err <= (sw_bus.awaddr >> ADDR_LSB) >= MEM_DEPTH;
+      w_dec_err <= (sw_bus.awaddr >> ADDR_LSB) >= MEM_DEPTH;
       len_err <= 1'b0;
     end
     else if (w_hs) begin
@@ -226,7 +226,7 @@ module axi_slv #(
                       //addr_lsb + mem_aw - 1 : addr_lsb
   
   always_ff @(posedge aclk) begin
-    if (w_hs && !dec_err) begin
+    if (w_hs && !w_dec_err) begin
       for (int i = 0; i < STRB_BW; i++)
         if (sw_bus.wstrb[i])
           mem[w_idx][i*8 +: 8] <= sw_bus.wdata[i*8 +: 8];
@@ -238,7 +238,7 @@ module axi_slv #(
   assign sw_bus.awready = (write_state == WRITE_IDLE) && !aw_done;
   assign sw_bus.wready = (write_state == WRITE_IDLE) && aw_done;
   assign sw_bus.bvalid = (write_state == B);
-  assign sw_bus.bresp = (dec_err || len_err) ? RESP_SLVERR : RESP_OKAY;
+  assign sw_bus.bresp = (w_dec_err || len_err) ? RESP_SLVERR : RESP_OKAY;
   assign sw_bus.bid = aw_id;
 
 
