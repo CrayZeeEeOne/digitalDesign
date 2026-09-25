@@ -140,6 +140,8 @@ vitis:
 
 	@if not exist "$(VITIS_SCRIPT)" (echo ERROR: Vitis script does not exist: "$(VITIS_SCRIPT)" & exit /B 1)
 
+	rmdir /S /Q $(VITIS_WS)
+
 	$(VITIS) -s "$(VITIS_SCRIPT)"
 
 	@echo.
@@ -187,7 +189,7 @@ debug:
 
 bit: project bd build 
 
-all: project bd build vitis debug
+all: project bd build vitis program debug
 
 
 clean:

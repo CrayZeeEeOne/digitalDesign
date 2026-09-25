@@ -1,75 +1,70 @@
 import os
 import sys
+import shutil
 import vitis
 
-
-# ============================================================
-# PATHS
-# ============================================================
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(SCRIPT_DIR)
 
-XSA_FILE = os.path.join(ROOT_DIR, "project", "DF5_project.xsa")
-WORKSPACE = os.path.join(ROOT_DIR, "ws_vitis")
-MAIN_C = os.path.join(ROOT_DIR, "vitis", "app_component", "src", "main.c")
+XSA_FILE = os.path.join(
+    ROOT_DIR,
+    "project",
+    "DF5_project.xsa"
+)
+
+WORKSPACE = os.path.join(
+    ROOT_DIR,
+    "ws_vitis"
+)
+
+MAIN_C = os.path.join(
+    ROOT_DIR,
+    "vitis",
+    "app_component",
+    "src",
+    "main.c"
+)
 
 
-print("==========================================")
-print("Vitis build")
-print("==========================================")
-print()
+# --------------------------------------------------
+# Check files
+# --------------------------------------------------
 
-print("XSA:")
-print("  " + XSA_FILE)
-
-print()
-print("Workspace:")
-print("  " + WORKSPACE)
-
-print()
-print("Source:")
-print("  " + MAIN_C)
-
-print()
-
-
-# ============================================================
-# CHECK
-# ============================================================
-
-if not os.path.isfile(XSA_FILE):
+if not os.path.exists(XSA_FILE):
     print("ERROR: XSA does not exist:")
-    print("  " + XSA_FILE)
+    print(XSA_FILE)
     sys.exit(1)
 
-if not os.path.isfile(MAIN_C):
+if not os.path.exists(MAIN_C):
     print("ERROR: main.c does not exist:")
-    print("  " + MAIN_C)
+    print(MAIN_C)
     sys.exit(1)
 
 
-# ============================================================
-# VITIS CLIENT
-# ============================================================
+# --------------------------------------------------
+# Create Vitis client
+# --------------------------------------------------
 
+print()
 print("==========================================")
-print("Creating Vitis client")
+print("Starting Vitis")
 print("==========================================")
+print()
 
 client = vitis.create_client()
-
 client.set_workspace(path=WORKSPACE)
 
 
-# ============================================================
-# PLATFORM
-# ============================================================
+# --------------------------------------------------
+# Create platform
+# --------------------------------------------------
 
 print()
 print("==========================================")
 print("Creating platform")
 print("==========================================")
+print()
 
 platform = client.create_platform_component(
     name="DF5_platform",
@@ -78,24 +73,25 @@ platform = client.create_platform_component(
     os="standalone"
 )
 
-print()
-print("==========================================")
-print("Building platform")
-print("==========================================")
-
 platform.build()
 
 
-# ============================================================
-# APPLICATION
-# ============================================================
+# --------------------------------------------------
+# Find platform
+# --------------------------------------------------
+
+platform_xpfm = client.find_platform_in_repos("DF5_platform")
+
+
+# --------------------------------------------------
+# Create application
+# --------------------------------------------------
 
 print()
 print("==========================================")
 print("Creating application")
 print("==========================================")
-
-platform_xpfm = client.find_platform_in_repos("DF5_platform")
+print()
 
 app = client.create_app_component(
     name="app_component",
@@ -103,14 +99,9 @@ app = client.create_app_component(
 )
 
 
-# ============================================================
-# SOURCE
-# ============================================================
-
-print()
-print("==========================================")
-print("Importing main.c")
-print("==========================================")
+# --------------------------------------------------
+# Import source
+# --------------------------------------------------
 
 app.import_files(
     from_loc=os.path.dirname(MAIN_C),
@@ -119,21 +110,18 @@ app.import_files(
 )
 
 
-# ============================================================
-# BUILD
-# ============================================================
+# --------------------------------------------------
+# Build application
+# --------------------------------------------------
 
 print()
 print("==========================================")
 print("Building application")
 print("==========================================")
+print()
 
 app.build()
 
-
-# ============================================================
-# DONE
-# ============================================================
 
 print()
 print("==========================================")
