@@ -20,7 +20,13 @@
 _ide/logs
 _ide/.wsdata
 
-
+# Vivado generated files
+scripts/.Xil/
+scripts/*.jou
+scripts/*.log
+scripts/*.txt
 
 /project
 /ws_vitis
+/vitis/app_component/build
+/reports

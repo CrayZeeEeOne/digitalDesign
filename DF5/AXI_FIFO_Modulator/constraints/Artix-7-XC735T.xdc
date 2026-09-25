@@ -6,13 +6,30 @@ set_property BITSTREAM.CONFIG.CONFIGRATE 50 [current_design]
 set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4 [current_design]
 set_property BITSTREAM.CONFIG.SPI_FALL_EDGE Yes [current_design]
 
+# ============================================================
 # CLOCK
-set_property -dict {PACKAGE_PIN R4 IOSTANDARD LVCMOS33} [get_ports {clk}]
-create_clock -period 10.000 -name sys_clk [get_ports {clk}]
+# ============================================================
 
+set_property PACKAGE_PIN R4 [get_ports diff_clock_rtl_0_clk_p]
+set_property IOSTANDARD DIFF_SSTL15 [get_ports diff_clock_rtl_0_clk_p]
+
+# TODO: поставити N-пін differential pair для R4
+# set_property PACKAGE_PIN <N_PIN> [get_ports diff_clock_rtl_0_clk_n]
+# set_property IOSTANDARD DIFF_SSTL15 [get_ports diff_clock_rtl_0_clk_n]
+
+# ============================================================
 # RESET
-set_property -dict {PACKAGE_PIN R14 IOSTANDARD LVCMOS33} [get_ports {resetn}]
+# ============================================================
 
+set_property PACKAGE_PIN R14 [get_ports reset_rtl_0]
+set_property IOSTANDARD LVCMOS33 [get_ports reset_rtl_0]
+
+# ============================================================
 # LEDs
-set_property -dict {PACKAGE_PIN W22 IOSTANDARD LVCMOS33} [get_ports {led1}]
-set_property -dict {PACKAGE_PIN Y22 IOSTANDARD LVCMOS33} [get_ports {led2}]
+# ============================================================
+
+set_property PACKAGE_PIN W22 [get_ports led_0]
+set_property IOSTANDARD LVCMOS33 [get_ports led_0]
+
+set_property PACKAGE_PIN Y22 [get_ports led_1]
+set_property IOSTANDARD LVCMOS33 [get_ports led_1]

@@ -1,87 +1,205 @@
+SHELL := cmd.exe
+
 VIVADO := vivado
-XSCT   := xsct
+VITIS  := vitis
 
-ROOT_DIR        := ..
-PROJECT_DIR     := $(ROOT_DIR)/project
-VITIS_DIR       := $(ROOT_DIR)/vitis
-VITIS_WS        := $(ROOT_DIR)/ws_vitis
-LOG_DIR         := $(ROOT_DIR)/logs
-SCRIPT_DIR      := .
-
+PROJECT_DIR  := ..\project
 PROJECT_NAME := DF5_project
-PROJECT_FILE := $(PROJECT_DIR)/$(PROJECT_NAME).xpr
 
-BITSTREAM := $(PROJECT_DIR)/$(PROJECT_NAME).runs/impl_1/system_wrapper.bit
-XSA       := $(PROJECT_DIR)/$(PROJECT_NAME).xsa
-ELF       := $(VITIS_DIR)/app_component/build/app_component.elf
+PROJECT_FILE := $(PROJECT_DIR)\$(PROJECT_NAME).xpr
+XSA_FILE     := $(PROJECT_DIR)\$(PROJECT_NAME).xsa
 
+VITIS_DIR := ..\vitis
+VITIS_WS  := ..\ws_vitis
+MAIN_C    := ..\vitis\app_component\src\main.c
 
-.PHONY: all
-all: full
+PROJECT_SCRIPT := project.tcl
+BD_SCRIPT      := create_bd.tcl
+BUILD_SCRIPT   := build.tcl
+PROGRAM_SCRIPT := program.tcl
 
-
-.PHONY: project
-project:
-	@if not exist "$(LOG_DIR)" mkdir "$(LOG_DIR)"
-	$(VIVADO) -mode batch -source "$(SCRIPT_DIR)/project.tcl" -log "$(LOG_DIR)/project.log"
-
-
-.PHONY: bd
-bd: project
-	$(VIVADO) -mode batch -source "$(SCRIPT_DIR)/bd.tcl" -log "$(LOG_DIR)/bd.log"
+VITIS_SCRIPT := build_vitis.py
+DEBUG_SCRIPT := debug_vitis.py
 
 
-.PHONY: bitstream
-bitstream: bd
-	$(VIVADO) -mode batch -source "$(SCRIPT_DIR)/build.tcl" -log "$(LOG_DIR)/build.log"
+.PHONY: help check project bd build vitis program debug bit all clean
 
 
-$(XSA): bitstream
-	@if not exist "$(XSA)" (echo ERROR: XSA was not generated & exit /b 1)
-
-
-.PHONY: xsa
-xsa: $(XSA)
-
-
-.PHONY: vitis
-vitis: $(XSA)
-	$(XSCT) "$(SCRIPT_DIR)/vitis.tcl"
-
-
-.PHONY: full
-full: bitstream vitis
-
-
-.PHONY: program
-program:
-	@if not exist "$(BITSTREAM)" (echo ERROR: Bitstream not found: "$(BITSTREAM)" & exit /b 1)
-	@if not exist "$(ELF)" (echo ERROR: ELF not found: "$(ELF)" & exit /b 1)
-	@if not exist "$(LOG_DIR)" mkdir "$(LOG_DIR)"
-	$(VIVADO) -mode batch -source "$(SCRIPT_DIR)/program.tcl" -log "$(LOG_DIR)/program.log"
-	$(XSCT) "$(SCRIPT_DIR)/load_elf.tcl"
-
-
-.PHONY: clean
-clean:
-	@if exist "$(PROJECT_DIR)" rmdir /S /Q "$(PROJECT_DIR)"
-	@if exist "$(VITIS_WS)" rmdir /S /Q "$(VITIS_WS)"
-	@if exist "$(VITIS_DIR)\app_component\build" rmdir /S /Q "$(VITIS_DIR)\app_component\build"
-	@if exist "$(LOG_DIR)" rmdir /S /Q "$(LOG_DIR)"
-
-
-.PHONY: help
 help:
 	@echo.
-	@echo Available targets:
+	@echo ==========================================
+	@echo DF5 Project
+	@echo ==========================================
 	@echo.
-	@echo   make           - full Vivado + Vitis build
-	@echo   make full      - full Vivado + Vitis build
-	@echo   make project   - recreate Vivado project
-	@echo   make bd        - recreate Block Design
-	@echo   make bitstream - synthesize, implement and generate bitstream
-	@echo   make xsa       - generate XSA
-	@echo   make vitis     - build MicroBlaze ELF
-	@echo   make program   - program FPGA and load ELF
-	@echo   make clean     - remove generated files
+	@echo make project  - Create Vivado project
+	@echo make bd       - Create Block Design
+	@echo make build    - Synthesis, implementation, bitstream and XSA
+	@echo make vitis    - Build Vitis platform and application
+	@echo make program  - Program FPGA
+	@echo make debug    - Run Vitis application
+	@echo make bit      - Vivado Flow
+	@echo make all      - Run full process 
+	@echo make clean    - Remove generated project files
+	@echo.
+
+
+check:
+	@echo.
+	@echo ==========================================
+	@echo Checking project
+	@echo ==========================================
+	@echo.
+
+	@if not exist "$(PROJECT_FILE)" (echo ERROR: Vivado project does not exist: "$(PROJECT_FILE)" & exit /B 1)
+
+	@if not exist "$(XSA_FILE)" (echo WARNING: XSA does not exist. Run "make build".)
+
+	@if not exist "$(MAIN_C)" (echo ERROR: main.c does not exist: "$(MAIN_C)" & exit /B 1)
+
+	@echo Project:
+	@echo   $(PROJECT_FILE)
+	@echo.
+	@echo XSA:
+	@echo   $(XSA_FILE)
+	@echo.
+	@echo Source:
+	@echo   $(MAIN_C)
+	@echo.
+	@echo Check complete.
+	@echo.
+
+
+project:
+	@echo.
+	@echo ==========================================
+	@echo Creating Vivado project
+	@echo ==========================================
+	@echo.
+
+	$(VIVADO) -mode batch -source "$(PROJECT_SCRIPT)"
+
+	@echo.
+	@echo ==========================================
+	@echo Vivado project created
+	@echo ==========================================
+	@echo.
+
+
+bd:
+	@echo.
+	@echo ==========================================
+	@echo Creating Block Design
+	@echo ==========================================
+	@echo.
+
+	@if not exist "$(PROJECT_FILE)" (echo ERROR: Vivado project does not exist. Run "make project" first. & exit /B 1)
+
+	$(VIVADO) -mode batch -source "$(BD_SCRIPT)"
+
+	@echo.
+	@echo ==========================================
+	@echo Block Design created
+	@echo ==========================================
+	@echo.
+
+
+build:
+	@echo.
+	@echo ==========================================
+	@echo Building Vivado project
+	@echo ==========================================
+	@echo.
+
+	@if not exist "$(PROJECT_FILE)" (echo ERROR: Vivado project does not exist. Run "make project" first. & exit /B 1)
+
+	$(VIVADO) -mode batch -source "$(BUILD_SCRIPT)"
+
+	@echo.
+	@echo ==========================================
+	@echo Vivado build complete
+	@echo ==========================================
+	@echo.
+
+	@if not exist "$(XSA_FILE)" (echo ERROR: XSA was not generated: "$(XSA_FILE)" & exit /B 1)
+
+	@echo XSA:
+	@echo   $(XSA_FILE)
+	@echo.
+
+
+vitis:
+	@echo.
+	@echo ==========================================
+	@echo Building Vitis application
+	@echo ==========================================
+	@echo.
+
+	@if not exist "$(XSA_FILE)" (echo ERROR: XSA does not exist. Run "make build" first. & exit /B 1)
+
+	@if not exist "$(MAIN_C)" (echo ERROR: main.c does not exist: "$(MAIN_C)" & exit /B 1)
+
+	@if not exist "$(VITIS_SCRIPT)" (echo ERROR: Vitis script does not exist: "$(VITIS_SCRIPT)" & exit /B 1)
+
+	$(VITIS) -s "$(VITIS_SCRIPT)"
+
+	@echo.
+	@echo ==========================================
+	@echo Vitis build complete
+	@echo ==========================================
+	@echo.
+
+
+program:
+	@echo.
+	@echo ==========================================
+	@echo Programming FPGA
+	@echo ==========================================
+	@echo.
+
+	@if not exist "$(PROJECT_FILE)" (echo ERROR: Vivado project does not exist. Run "make project" first. & exit /B 1)
+
+	$(VIVADO) -mode batch -source "$(PROGRAM_SCRIPT)"
+
+	@echo.
+	@echo ==========================================
+	@echo FPGA programmed
+	@echo ==========================================
+	@echo.
+
+
+debug:
+	@echo.
+	@echo ==========================================
+	@echo Starting Vitis Debug
+	@echo ==========================================
+	@echo.
+
+	@if not exist "$(DEBUG_SCRIPT)" (echo ERROR: Debug script does not exist: "$(DEBUG_SCRIPT)" & exit /B 1)
+
+	$(VITIS) -s "$(DEBUG_SCRIPT)"
+
+	@echo.
+	@echo ==========================================
+	@echo Vitis Debug finished
+	@echo ==========================================
+	@echo.
+
+
+bit: project bd build 
+
+all: project bd build vitis debug
+
+
+clean:
+	@echo.
+	@echo ==========================================
+	@echo Cleaning generated files
+	@echo ==========================================
+	@echo.
+
+	@if exist "$(PROJECT_DIR)" rmdir /S /Q "$(PROJECT_DIR)"
+	@if exist "$(VITIS_WS)" rmdir /S /Q "$(VITIS_WS)"
+
+	@echo.
+	@echo Clean complete.
 	@echo.

@@ -1,153 +1,197 @@
-# ============================================================
-# project.tcl
+################################################################
+# Create Vivado project
 #
-# Creates Vivado project for AXI_FIFO_Modulator
+# Directory structure:
 #
-# Run from:
-#   AXI_FIFO_Modulator/scripts/
+# DF5/
+# ├── scripts/
+# │   └── project.tcl
+# ├── sources/
+# │   └── rtl/
+# │       ├── gpio_logic.sv
+# │       └── top_gpio.v
+# ├── constraints/
+# │   └── Artix-7-XC735T.xdc
+# └── project/
 #
-# ============================================================
+################################################################
 
+set project_name DF5_project
+set project_dir "../project"
+set part_name xc7a35tfgg484-2
 
-# ------------------------------------------------------------
-# Paths
-# ------------------------------------------------------------
+set rtl_dir "../sources/rtl"
+set xdc_dir "../constraints"
 
-set SCRIPT_DIR [file normalize [file dirname [info script]]]
-set ROOT_DIR   [file normalize "$SCRIPT_DIR/.."]
+################################################################
+# Remove old project
+################################################################
 
-set PROJECT_DIR     "$ROOT_DIR/project"
-set SOURCES_DIR     "$ROOT_DIR/sources/rtl"
-set CONSTRAINTS_DIR "$ROOT_DIR/constraints"
-
-
-# ------------------------------------------------------------
-# Project settings
-# ------------------------------------------------------------
-
-set PROJECT_NAME "DF5_project"
-set PART         "xc7a35tfgg484-2"
-
-set PROJECT_FILE "$PROJECT_DIR/$PROJECT_NAME.xpr"
-
-
-# ------------------------------------------------------------
-# Remove existing project
-# ------------------------------------------------------------
-
-if {[file exists $PROJECT_DIR]} {
+if {[file exists $project_dir]} {
     puts ""
-    puts "=========================================="
-    puts "Removing existing project"
-    puts "=========================================="
-    puts "Directory: $PROJECT_DIR"
+    puts "Removing existing project directory:"
+    puts "  [file normalize $project_dir]"
     puts ""
 
-    file delete -force $PROJECT_DIR
+    file delete -force $project_dir
 }
 
-file mkdir $PROJECT_DIR
-
-
-# ------------------------------------------------------------
-# Create Vivado project
-# ------------------------------------------------------------
+################################################################
+# Create project
+################################################################
 
 puts ""
 puts "=========================================="
 puts "Creating Vivado project"
 puts "=========================================="
-puts "Project : $PROJECT_NAME"
-puts "Part    : $PART"
-puts "Location: $PROJECT_DIR"
 puts ""
 
-create_project $PROJECT_NAME $PROJECT_DIR -part $PART
-
-
-# ------------------------------------------------------------
-# Project properties
-# ------------------------------------------------------------
+create_project \
+    $project_name \
+    $project_dir \
+    -part $part_name
 
 set_property target_language Verilog [current_project]
 set_property simulator_language Mixed [current_project]
 
+################################################################
+# Check RTL directory
+################################################################
 
-# ------------------------------------------------------------
-# Add RTL sources
-# ------------------------------------------------------------
+if {![file exists $rtl_dir]} {
+    puts "ERROR: RTL directory does not exist:"
+    puts "  [file normalize $rtl_dir]"
+    exit 1
+}
 
 puts ""
-puts "=========================================="
-puts "Adding RTL sources"
-puts "=========================================="
+puts "RTL directory:"
+puts "  [file normalize $rtl_dir]"
+puts ""
 
-if {![file exists $SOURCES_DIR]} {
-    puts "ERROR: RTL sources directory does not exist:"
-    puts "       $SOURCES_DIR"
+################################################################
+# Add gpio_logic.sv
+################################################################
+
+set gpio_logic_file [file join $rtl_dir gpio_logic.sv]
+
+if {[file exists $gpio_logic_file]} {
+
+    puts "Adding source:"
+    puts "  [file normalize $gpio_logic_file]"
+
+    add_files -norecurse $gpio_logic_file
+
+} else {
+
+    puts "ERROR: File not found:"
+    puts "  [file normalize $gpio_logic_file]"
     exit 1
 }
 
-set rtl_files {}
+################################################################
+# Add top_gpio.v
+################################################################
 
-foreach pattern {*.v *.sv} {
-    foreach file [glob -nocomplain -type f [file join $SOURCES_DIR $pattern]] {
-        lappend rtl_files $file
-    }
-}
+set top_gpio_file [file join $rtl_dir top_gpio.v]
 
-if {[llength $rtl_files] == 0} {
-    puts "ERROR: No RTL sources found in:"
-    puts "       $SOURCES_DIR"
+if {[file exists $top_gpio_file]} {
+
+    puts "Adding source:"
+    puts "  [file normalize $top_gpio_file]"
+
+    add_files -norecurse $top_gpio_file
+
+} else {
+
+    puts "ERROR: File not found:"
+    puts "  [file normalize $top_gpio_file]"
     exit 1
 }
 
-foreach file $rtl_files {
-    puts "Adding RTL: $file"
-    add_files -fileset sources_1 $file
-}
-
-
-# ------------------------------------------------------------
+################################################################
 # Add constraints
-# ------------------------------------------------------------
+################################################################
 
-puts ""
-puts "=========================================="
-puts "Adding constraints"
-puts "=========================================="
+set xdc_file [file join $xdc_dir Artix-7-XC735T.xdc]
 
-set XDC_FILE "$CONSTRAINTS_DIR/Artix-7-XC735T.xdc"
+if {[file exists $xdc_file]} {
 
-if {![file exists $XDC_FILE]} {
-    puts "ERROR: Constraint file does not exist:"
-    puts "       $XDC_FILE"
+    puts ""
+    puts "Adding constraints:"
+    puts "  [file normalize $xdc_file]"
+
+    add_files \
+        -fileset constrs_1 \
+        -norecurse \
+        $xdc_file
+
+} else {
+
+    puts "ERROR: Constraint file not found:"
+    puts "  [file normalize $xdc_file]"
     exit 1
 }
 
-puts "Adding XDC: $XDC_FILE"
-
-add_files -fileset constrs_1 $XDC_FILE
-
-
-# ------------------------------------------------------------
+################################################################
 # Update compile order
-# ------------------------------------------------------------
+################################################################
 
 update_compile_order -fileset sources_1
 
-
-# ------------------------------------------------------------
-# Done
-# ------------------------------------------------------------
+################################################################
+# Print sources
+################################################################
 
 puts ""
 puts "=========================================="
-puts "Vivado project created successfully"
+puts "Project sources"
 puts "=========================================="
 puts ""
-puts "Project file:"
-puts "  $PROJECT_FILE"
+
+set source_files [get_files -quiet -of_objects [get_filesets sources_1]]
+
+foreach f $source_files {
+    puts "  [file normalize $f]"
+}
+
+################################################################
+# Print constraints
+################################################################
+
+puts ""
+puts "=========================================="
+puts "Constraint files"
+puts "=========================================="
+puts ""
+
+set constraint_files [get_files -quiet -of_objects [get_filesets constrs_1]]
+
+foreach f $constraint_files {
+    puts "  [file normalize $f]"
+}
+
+################################################################
+# Project creation complete
+################################################################
+
+puts ""
+puts "=========================================="
+puts "Project creation complete"
+puts "=========================================="
+puts ""
+
+puts "Project:"
+puts "  [file normalize $project_dir/$project_name.xpr]"
+puts ""
+
+puts "Sources:"
+puts "  [file normalize $gpio_logic_file]"
+puts "  [file normalize $top_gpio_file]"
+puts ""
+
+puts "Constraints:"
+puts "  [file normalize $xdc_file]"
 puts ""
 
 close_project
