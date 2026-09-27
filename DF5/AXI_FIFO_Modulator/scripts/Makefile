@@ -10,7 +10,7 @@ PROJECT_FILE := $(PROJECT_DIR)\$(PROJECT_NAME).xpr
 XSA_FILE     := $(PROJECT_DIR)\$(PROJECT_NAME).xsa
 
 VITIS_DIR := ..\vitis
-VITIS_WS  := ..\ws_vitis
+VITIS_WS  := $(PROJECT_DIR)\ws_vitis
 MAIN_C    := ..\vitis\app_component\src\main.c
 
 PROJECT_SCRIPT := project.tcl
@@ -140,7 +140,7 @@ vitis:
 
 	@if not exist "$(VITIS_SCRIPT)" (echo ERROR: Vitis script does not exist: "$(VITIS_SCRIPT)" & exit /B 1)
 
-	rmdir /S /Q $(VITIS_WS)
+	@if exist "$(VITIS_WS)" rmdir /S /Q "$(VITIS_WS)"
 
 	$(VITIS) -s "$(VITIS_SCRIPT)"
 

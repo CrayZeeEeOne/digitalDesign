@@ -27,6 +27,4 @@ scripts/*.log
 scripts/*.txt
 
 /project
-/ws_vitis
 /vitis/app_component/build
-/reports

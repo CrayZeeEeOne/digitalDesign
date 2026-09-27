@@ -8,6 +8,7 @@ ROOT_DIR = os.path.dirname(SCRIPT_DIR)
 
 ELF_FILE = os.path.join(
     ROOT_DIR,
+    "project",
     "ws_vitis",
     "app_component",
     "build",

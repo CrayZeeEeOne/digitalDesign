@@ -15,6 +15,7 @@ XSA_FILE = os.path.join(
 
 WORKSPACE = os.path.join(
     ROOT_DIR,
+    "project",
     "ws_vitis"
 )
 

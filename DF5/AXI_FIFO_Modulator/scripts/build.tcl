@@ -95,15 +95,15 @@ puts "Generating Synthesis Reports"
 puts "=========================================="
 
 
-file mkdir "../reports"
+file mkdir "../project/reports"
 
 
 report_utilization \
-    -file "../reports/utilization_synth.rpt"
+    -file "../project/reports/utilization_synth.rpt"
 
 
 report_timing_summary \
-    -file "../reports/timing_synth.rpt"
+    -file "../project/reports/timing_synth.rpt"
 
 
 close_design
@@ -161,15 +161,15 @@ puts "=========================================="
 
 
 report_utilization \
-    -file "../reports/utilization_impl.rpt"
+    -file "../project/reports/utilization_impl.rpt"
 
 
 report_timing_summary \
-    -file "../reports/timing_impl.rpt"
+    -file "../project/reports/timing_impl.rpt"
 
 
 report_power \
-    -file "../reports/power.rpt"
+    -file "../project/reports/power.rpt"
 
 
 # ============================================================

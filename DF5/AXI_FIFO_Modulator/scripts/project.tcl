@@ -6,12 +6,11 @@
 # DF5/
 # ├── scripts/
 # │   └── project.tcl
-# ├── sources/
-# │   └── rtl/
+# ├── vivado/
+# │   ├── sources/rtl/
 # │       ├── gpio_logic.sv
 # │       └── top_gpio.v
-# ├── constraints/
-# │   └── Artix-7-XC735T.xdc
+# │   └── constraints/Artix-7-XC735T.xdc
 # └── project/
 #
 ################################################################
@@ -20,8 +19,8 @@ set project_name DF5_project
 set project_dir "../project"
 set part_name xc7a35tfgg484-2
 
-set rtl_dir "../sources/rtl"
-set xdc_dir "../constraints"
+set rtl_dir "../vivado/sources/rtl"
+set xdc_dir "../vivado/constraints"
 
 ################################################################
 # Remove old project
