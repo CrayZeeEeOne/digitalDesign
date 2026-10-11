@@ -1,66 +1,103 @@
+# DF5 — TFT / SD / I/Q Replay
 
-# DF5 — MicroBlaze + AXI Interconnect IP + FIFO + FSK Modulator
-This project based on `DF4/AXI_Slave_example` (MicroBlaze block designm see note below). The interconnect between
-MicroBlaze and the peripheral is a **stock Vivado IP block** (AXI Interconnect added
-via IP Integrator) — unlike DF4/AXI_Interconnect, writing the interconnect itself is not part of this
-task. It wires MicroBlaze through that IP to a new AXI4-Lite FIFO peripheral whose output feeds a very
-simplified hardware **FSK** (frequency-shift keying) modulator, plus an LED that reacts to every AXI
-write transaction into the FIFO.
+Проєкт на MicroBlaze: TFT через SPI, SD-карта з FatFs, відтворення та
+демодуляція I/Q-записів.
 
-Note: MicroBlaze is a soft CPU core originally designed for Xilinx FPGA. It can run C programs as a standalone CPU. What is idea of MicroBlaze, read in DF5/DOC folder. 
+## Структура
 
-
-See [`task_readme.md`](task_readme.md) for the full assignment and [`docs/scripts_and_xdc_guide.md`](docs/scripts_and_xdc_guide.md)
-for a beginner-friendly explanation of what the build scripts and the `.xdc` constraints file actually do.
-
-## Build Instructions
-
-Project stages are managed via the provided `build.bat` script.
-
-### Create Project
-
-```bash
-.\scripts\build.bat
+```
+AXI_FIFO_Modulator/
+├── scripts/              точка входу в потік, нічого не редагується вручну
+│   ├── build.bat         єдина команда для всього
+│   ├── build.tcl         створення проєкту, сканування джерел
+│   ├── run.tcl           синтез / implementation / bitstream / XSA
+│   ├── run_stage.tcl     передача етапу з батника в run.tcl
+│   └── sim.tcl           запуск тестбенча в xsim
+├── vivado/
+│   ├── sources/
+│   │   ├── rtl/          синтезований RTL (.sv, .v)
+│   │   ├── tb/           тестбенчі (у проєкт ідуть як sim_1)
+│   │   └── bd/           збережені Block Design (.bd)
+│   ├── constraints/      .xdc
+│   └── project/          ЗГЕНЕРОВАНЕ, у git не потрапляє
+├── vitis/
+│   ├── src/              C-код застосунку
+│   ├── platform/         ЗГЕНЕРОВАНЕ, сюди падає .xsa
+│   └── workspace/        ЗГЕНЕРОВАНЕ
+├── docs/
+└── .gitignore
 ```
 
-After the project is generated:
+Принцип: усе, що лежить у `vivado/sources/` і `vivado/constraints/`,
+підхоплюється автоматично. Додав файл — просто перезапусти `build.bat`,
+правити Tcl не треба.
 
-* Open the project in Vivado GUI.
-* Create/import the MicroBlaze block design (reuse `DF4/AXI_Slave_example/sources/bd/microblaze.bd` as a starting point).
-* In IP Integrator, add a stock **AXI Interconnect** (or **AXI SmartConnect**) IP block between MicroBlaze and the new peripheral.
-* Add `axi_fifo_regs` (wrapping `sync_fifo` + `fsk_modulator`, see `top.vhd`) as an RTL module / AXI peripheral in the block design.
+## Команди
 
----
+```bat
+cd scripts
 
-## Build Options
-
-### Build All Stages (Synthesis + Implementation + Bitstream)
-
-```bash
-.\scripts\build.bat -all
+build.bat              створити або оновити проєкт
+build.bat -syn         + синтез
+build.bat -impl        + implementation і bitstream
+build.bat -xsa         + експорт XSA у vitis\platform\
+build.bat -all         усе підряд
+build.bat -sim         симуляція тестбенча
+build.bat -gui         відкрити GUI (для редагування Block Design)
+build.bat -board       full flow: build + firmware + JTAG run on board
+build.bat -clean       видалити згенерований проєкт
 ```
 
-### Run Synthesis Only
+Block Design редагується лише в GUI — скриптового шляху для нього немає.
+Після змін збережи `.bd` у `vivado/sources/bd/`, щоб він потрапив у git.
 
-```bash
-.\scripts\build.bat -syn
+## Параметри проєкту
+
+Задаються вгорі `scripts/build.tcl`:
+
+| Змінна | Значення |
+|---|---|
+| `part_name` | `xc7a35tfgg484-2` |
+| `top_module` | `microblaze_wrapper` |
+| `bd_name` | `microblaze` |
+
+## Блоки
+
+| Блок | Стан | Документ |
+|---|---|---|
+| 1 — TFT: SPI RTL і C-драйвер | в роботі | [`docs/block1_tft.md`](docs/block1_tft.md) |
+| 2 — SD-карта: Vivado IP і FatFs | — | |
+| 3 — I/Q replay, Viewer, Demodulator | — | |
+
+## Block 3 LCD graph viewer (MicroBlaze)
+
+A firmware viewer is added in `vitis/src` to render demodulator-style plots directly on ST7789 LCD with all calculations on MicroBlaze:
+- input I/Q
+- mixer I/Q
+- CIC decimated I/Q
+- discriminator + power/burst
+- spectrogram
+- waterfall
+- constellation
+- decoder state timeline
+
+Button navigation is handled by `system_ctrl_regs` events:
+- KEY1 (`btn1_n`) cycles view forward
+- KEY2 (`btn2_n`) cycles view backward
+
+Main files:
+- `vitis/src/main.c`
+- `vitis/src/graph_viewer.c`
+- `vitis/src/graph_viewer.h`
+- `vitis/src/system_ctrl.c`
+- `vitis/src/system_ctrl.h`
+
+Constraints update in `vivado/constraints/tft.xdc`:
+- `btn1_n` -> `W22`
+- `btn2_n` -> `Y21`
+
+From repo root you can also run one command:
+
+```bat
+run_board.bat
 ```
-
-### Run Implementation and Generate Bitstream
-
-```bash
-.\scripts\build.bat -impl -bit
-```
-
-### Generate XSA File (for Vitis)
-
-```bash
-.\scripts\build.bat -xsa
-```
-
----
-
-## ⚠️ Important Notes
-
-* Synthesis may fail if generated IP cores (e.g. `clk_wiz_0`, AXI Interconnect) are not properly created — regenerate IP in the Vivado GUI if needed.
-* The AXI interconnect is a Vivado IP block configured in the block design GUI, not RTL under `sources/rtl` — there is nothing to hand-write there.
