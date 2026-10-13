@@ -110,18 +110,11 @@ if {[llength [get_files -quiet "*$bd_name.bd"]] > 0} {
     if {[file exists "$script_dir/patch_microblaze_bd_buttons.tcl"]} {
         source "$script_dir/patch_microblaze_bd_buttons.tcl"
     }
-    set_property synth_checkpoint_mode None $bd_file
-    # Force regeneration of BD output products so synth can find generated
-    # modules (e.g. microblaze) even after project/script changes.
+    # Режим синтезу BD лишаємо стандартним (OOC по IP). З synth_checkpoint_mode
+    # None або з microblaze.v, доданим як звичайне джерело, BD синтезується як
+    # чужий RTL: XSA виходить без .hwh/.mmi, а BRAM не прив'язується до ELF.
     generate_target all $bd_file
     export_ip_user_files -of_objects $bd_file -no_script -sync -force -quiet
-    create_ip_run $bd_file -quiet
-    set bd_synth "$proj_dir/$proj_name.gen/sources_1/bd/$bd_name/synth/$bd_name.v"
-    if {[file exists $bd_synth]} {
-        if {[llength [get_files -quiet [file tail $bd_synth]]] == 0} {
-            add_files -norecurse -fileset sources_1 $bd_synth
-        }
-    }
     if {[llength [get_files -quiet "${bd_name}_wrapper.v"]] == 0} {
         puts "INFO: генерую HDL-обгортку для $bd_name"
         set wrapper [make_wrapper -files $bd_file -top]
