@@ -35,5 +35,5 @@ set_property -dict {PACKAGE_PIN P14 IOSTANDARD LVCMOS33} [get_ports uart_rx]
 set_property -dict {PACKAGE_PIN P15 IOSTANDARD LVCMOS33} [get_ports uart_tx]
 
 # Board keys for graph view navigation (active-low buttons)
-set_property -dict {PACKAGE_PIN W22 IOSTANDARD LVCMOS33 PULLUP TRUE} [get_ports btn1_n]
+set_property -dict {PACKAGE_PIN W21 IOSTANDARD LVCMOS33 PULLUP TRUE} [get_ports btn1_n]
 set_property -dict {PACKAGE_PIN Y21 IOSTANDARD LVCMOS33 PULLUP TRUE} [get_ports btn2_n]

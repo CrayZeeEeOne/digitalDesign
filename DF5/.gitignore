@@ -1,0 +1,14 @@
+# DF5: службові файли Vivado/XSCT і локальні тимчасові скрипти в корені
+.Xil/
+*.jou
+*.log
+clockInfo.txt
+dfx_runtime.txt
+reportstrategies
+strategies
+-p
+2025.2*/
+.tmp*
+tmp_*
+*.diff
+.codex_patch.diff

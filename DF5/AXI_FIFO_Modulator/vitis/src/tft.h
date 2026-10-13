@@ -17,6 +17,10 @@
 #define TFT_HEIGHT  320
 #endif
 
+/* ST7789 RAM is 240x320; a shorter panel sits at an offset inside it. */
+#define TFT_RAM_ROWS 320
+#define TFT_ROW_OFF  (TFT_RAM_ROWS - TFT_HEIGHT)
+
 /*------------------------------------------------- готові кольори ---------*/
 #define TFT_BLACK   0x0000
 #define TFT_WHITE   0xFFFF

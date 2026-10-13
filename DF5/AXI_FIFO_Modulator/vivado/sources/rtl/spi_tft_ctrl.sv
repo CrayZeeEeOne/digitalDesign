@@ -86,10 +86,10 @@ module spi_tft_ctrl #(
   //==========================================================================
   logic        cfg_enable;
   logic        cfg_dc;
-  logic        cfg_rst_n;
+  logic        cfg_rst_n = 1'b1;
   logic        cfg_cs_n;
   logic        cfg_cs_auto;
-  logic        cfg_blk;
+  logic        cfg_blk   = 1'b1;
   logic [15:0] cfg_clkdiv;
 
   //==========================================================================
@@ -263,10 +263,10 @@ module spi_tft_ctrl #(
     if (!s_axi_aresetn) begin
       cfg_enable  <= 1'b0;
       cfg_dc      <= 1'b0;
-      cfg_rst_n   <= 1'b0;     // дисплей тримається в скиді до ініціалізації
+      cfg_rst_n   <= 1'b1;     // дисплей не в скиді: софт сам робить HW reset у tft_init
       cfg_cs_n    <= 1'b1;
       cfg_cs_auto <= 1'b1;
-      cfg_blk     <= 1'b0;     // підсвітка вимкнена до ініціалізації
+      cfg_blk     <= 1'b1;     // підсвітка увімкнена одразу після конфігурації FPGA
       cfg_clkdiv  <= 16'd1;    // 100 МГц / 4 = 25 МГц
     end
     else if (do_write) begin

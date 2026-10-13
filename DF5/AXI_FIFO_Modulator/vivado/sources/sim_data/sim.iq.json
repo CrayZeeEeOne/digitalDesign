@@ -1,0 +1,38 @@
+{
+  "file": "../vivado/sources/sim_data/sim.iq",
+  "format": "int16 I, int16 Q, little-endian, interleaved",
+  "fs_hz": 4500000.0,
+  "lo_hz": 867400000.0,
+  "channel_hz": 866310000.0,
+  "cfo_hz": 3000.0,
+  "f_offset_baseband_hz": -1087000.0,
+  "bitrate": 19200.0,
+  "deviation_hz": 25000.0,
+  "bt": 0.5,
+  "snr_db": 20.0,
+  "amplitude_lsb": 6000.0,
+  "noise_rms_lsb": 424.2640687119285,
+  "samples": 360000,
+  "sync_word": 37331,
+  "preamble_bytes": 8,
+  "payload_bytes": 46,
+  "packet_bytes_after_sync": 48,
+  "packets": [
+    {
+      "index": 0,
+      "start_sample": 47500,
+      "length_samples": 108750,
+      "payload_hex": "44463520504b54303020888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d",
+      "crc16": 50533,
+      "frame_hex": "aaaaaaaaaaaaaaaa91d344463520504b54303020888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767dc565"
+    },
+    {
+      "index": 1,
+      "start_sample": 203750,
+      "length_samples": 108750,
+      "payload_hex": "44463520504b5430312099a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e",
+      "crc16": 57727,
+      "frame_hex": "aaaaaaaaaaaaaaaa91d344463520504b5430312099a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878ee17f"
+    }
+  ]
+}

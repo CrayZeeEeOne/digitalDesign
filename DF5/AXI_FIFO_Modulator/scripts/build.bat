@@ -9,7 +9,7 @@ REM   build.bat -xsa       export XSA to vitis\platform\
 REM   build.bat -all       run all stages
 REM   build.bat -sim       run testbench simulation
 REM   build.bat -gui       open project in Vivado GUI
-REM   build.bat -board     full flow + load bitstream and ELF to board
+REM   build.bat -board     full flow + firmware (build_elf.bat) + load bit and ELF over JTAG
 REM   build.bat -clean     remove generated vivado\project
 REM ============================================================================
 
@@ -57,6 +57,9 @@ if "%1"=="-sim" (
 
 if "%1"=="-board" (
     call "%~f0" -all
+    if errorlevel 1 exit /b %errorlevel%
+
+    call "%SCRIPT_DIR%build_elf.bat"
     if errorlevel 1 exit /b %errorlevel%
 
     where xsct >nul 2>nul

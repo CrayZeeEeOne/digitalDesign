@@ -51,54 +51,32 @@ foreach p {btn1_n btn2_n} {
     set changed 1
   }
 }
-# Keep MicroBlaze out of permanent reset: tie proc_sys_reset ext_reset_in low.
-set rst_ext_pin [get_bd_pins -quiet rst_clk_wiz_1_100M/ext_reset_in]
-set const0_pin  [get_bd_pins -quiet xlconstant_0/dout]
-if {$rst_ext_pin ne "" && $const0_pin ne ""} {
-  set rst_nets [get_bd_nets -quiet -of_objects $rst_ext_pin]
-  if {[llength $rst_nets] > 0} {
-    foreach net $rst_nets {
-      disconnect_bd_net $net $rst_ext_pin
+# Force reset deassertion for standalone board run (avoid stuck proc_sys_reset outputs).
+set const0_pin [get_bd_pins -quiet xlconstant_0/dout]
+set const1_pin [get_bd_pins -quiet xlconstant_1/dout]
+
+foreach pin_name {microblaze_0/Reset microblaze_0_local_memory/SYS_Rst} {
+  set p [get_bd_pins -quiet $pin_name]
+  if {$p ne "" && $const0_pin ne ""} {
+    foreach net [get_bd_nets -quiet -of_objects $p] { disconnect_bd_net $net $p }
+    if {[llength [get_bd_nets -quiet -of_objects $p]] == 0} {
+      connect_bd_net $const0_pin $p
+      set changed 1
     }
-    set changed 1
-  }
-  if {[llength [get_bd_nets -quiet -of_objects $rst_ext_pin]] == 0} {
-    connect_bd_net $const0_pin $rst_ext_pin
-    set changed 1
   }
 }
 
-# Ensure proc_sys_reset auxiliary reset is deasserted (active-high input).
-set rst_aux_pin [get_bd_pins -quiet rst_clk_wiz_1_100M/aux_reset_in]
-if {$rst_aux_pin ne "" && $const0_pin ne ""} {
-  set aux_nets [get_bd_nets -quiet -of_objects $rst_aux_pin]
-  if {[llength $aux_nets] > 0} {
-    foreach net $aux_nets {
-      disconnect_bd_net $net $rst_aux_pin
+foreach pin_name {axi_interconnect_0/ARESETN axi_interconnect_0/S00_ARESETN axi_interconnect_0/M00_ARESETN axi_interconnect_0/M01_ARESETN tft_top_0/s_axi_aresetn system_ctrl_top_0/s_axi_aresetn} {
+  set p [get_bd_pins -quiet $pin_name]
+  if {$p ne "" && $const1_pin ne ""} {
+    foreach net [get_bd_nets -quiet -of_objects $p] { disconnect_bd_net $net $p }
+    if {[llength [get_bd_nets -quiet -of_objects $p]] == 0} {
+      connect_bd_net $const1_pin $p
+      set changed 1
     }
-    set changed 1
-  }
-  if {[llength [get_bd_nets -quiet -of_objects $rst_aux_pin]] == 0} {
-    connect_bd_net $const0_pin $rst_aux_pin
-    set changed 1
   }
 }
 
-# Ensure debug reset is deasserted for standalone boot flow.
-set rst_dbg_pin [get_bd_pins -quiet rst_clk_wiz_1_100M/mb_debug_sys_rst]
-if {$rst_dbg_pin ne "" && $const0_pin ne ""} {
-  set dbg_nets [get_bd_nets -quiet -of_objects $rst_dbg_pin]
-  if {[llength $dbg_nets] > 0} {
-    foreach net $dbg_nets {
-      disconnect_bd_net $net $rst_dbg_pin
-    }
-    set changed 1
-  }
-  if {[llength [get_bd_nets -quiet -of_objects $rst_dbg_pin]] == 0} {
-    connect_bd_net $const0_pin $rst_dbg_pin
-    set changed 1
-  }
-}
 # Ensure address assignment exists for MicroBlaze data space.
 assign_bd_address
 

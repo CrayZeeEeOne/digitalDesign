@@ -1,0 +1,2 @@
+# Raw int16 I/Q samples -- never touch line endings
+*.iq binary

@@ -3,6 +3,8 @@
 Проєкт на MicroBlaze: TFT через SPI, SD-карта з FatFs, відтворення та
 демодуляція I/Q-записів.
 
+Поточний стан, історія версій і відомі проблеми — у [`STATUS.md`](STATUS.md).
+
 ## Структура
 
 ```
@@ -17,7 +19,7 @@ AXI_FIFO_Modulator/
 │   ├── sources/
 │   │   ├── rtl/          синтезований RTL (.sv, .v)
 │   │   ├── tb/           тестбенчі (у проєкт ідуть як sim_1)
-│   │   └── bd/           збережені Block Design (.bd)
+│   │   └── bd/           ЗГЕНЕРОВАНЕ: робоча копія BD (джерело -- scripts/create_bd.tcl)
 │   ├── constraints/      .xdc
 │   └── project/          ЗГЕНЕРОВАНЕ, у git не потрапляє
 ├── vitis/
@@ -44,12 +46,13 @@ build.bat -xsa         + експорт XSA у vitis\platform\
 build.bat -all         усе підряд
 build.bat -sim         симуляція тестбенча
 build.bat -gui         відкрити GUI (для редагування Block Design)
-build.bat -board       full flow: build + firmware + JTAG run on board
+build.bat -board       усе: Vivado + прошивка (build_elf.bat) + запуск на платі по JTAG
 build.bat -clean       видалити згенерований проєкт
 ```
 
-Block Design редагується лише в GUI — скриптового шляху для нього немає.
-Після змін збережи `.bd` у `vivado/sources/bd/`, щоб він потрапив у git.
+Block Design редагується в GUI (`build.bat -gui`).
+Після змін перегенеруй `scripts/create_bd.tcl` (див. STATUS.md, «Збірка і запуск») --
+саме з нього BD будується на чистому клоні.
 
 ## Параметри проєкту
 
@@ -93,7 +96,7 @@ Main files:
 - `vitis/src/system_ctrl.h`
 
 Constraints update in `vivado/constraints/tft.xdc`:
-- `btn1_n` -> `W22`
+- `btn1_n` -> `W21`
 - `btn2_n` -> `Y21`
 
 From repo root you can also run one command:

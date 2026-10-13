@@ -29,3 +29,38 @@ webtalk*.log
 .vscode/
 *.swp
 *~
+#------------------------------------------------- згенероване (DF5) ---------
+# BD відтворюється з scripts/create_bd.tcl; тут лише робоча копія Vivado.
+vivado/sources/bd/
+vivado/project_bak*/
+vivado/sim_plot_work/
+DF5_project.gen/
+# Великі виходи tb_fsk_demod_plot / plot_rtl_demod.py
+vivado/sources/sim_data/rtl_plot.csv
+vivado/sources/sim_data/rtl_plot.expect.txt
+vivado/sources/sim_data/rtl_plot_model.trace.txt
+vivado/sources/sim_data/sim_plot.iq
+
+# Vitis: у git лише вихідний код прошивки і мінімальний BSP; ELF збирає scripts/build_elf.bat
+vitis/*
+!vitis/src/
+!vitis/bsp/
+
+# Службові файли Vivado/XSCT, що падають у робочий каталог
+clockInfo.txt
+dfx_runtime.txt
+reportstrategies
+strategies
+-p
+2025.2*/
+scripts/.user/
+scripts/tclapp/
+__pycache__/
+
+# Локальні експерименти й тимчасові скрипти
+.tmp*
+tmp_*
+scripts/simple_tft_*.v
+scripts/direct_impl_from_dcp.tcl
+scripts/build_elf.tcl
+vitis/src/board_boot.c

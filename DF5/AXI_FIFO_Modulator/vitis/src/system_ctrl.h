@@ -1,4 +1,4 @@
-﻿#ifndef SYSTEM_CTRL_H
+#ifndef SYSTEM_CTRL_H
 #define SYSTEM_CTRL_H
 
 #include <stdint.h>
@@ -28,6 +28,7 @@ uint32_t system_ctrl_read(const system_ctrl_t *sys, uint32_t reg);
 void system_ctrl_write(const system_ctrl_t *sys, uint32_t reg, uint32_t value);
 
 uint32_t system_ctrl_get_press_events(const system_ctrl_t *sys);
+uint32_t system_ctrl_get_buttons_raw(const system_ctrl_t *sys);
 void system_ctrl_clear_press_events(const system_ctrl_t *sys, uint32_t mask);
 
 #endif

@@ -45,6 +45,7 @@ proc do_synth {} {
 proc do_impl {} {
     # Генерація бітстріму вмикається тут, а не окремим кроком:
     # так implementation і write_bitstream ідуть одним запуском.
+    reset_run synth_1
     reset_run impl_1
     launch_runs impl_1 -to_step write_bitstream -jobs 4
     wait_run impl_1
