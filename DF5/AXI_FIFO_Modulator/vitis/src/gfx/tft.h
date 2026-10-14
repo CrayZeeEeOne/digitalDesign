@@ -7,7 +7,7 @@
 #define TFT_H
 
 #include <stdint.h>
-#include "spi_tft.h"
+#include "hal/spi_tft.h"
 
 /*------------------------------------------------- геометрія дисплея ------*/
 #ifndef TFT_WIDTH

@@ -1,8 +1,8 @@
 /*============================================================================
  * tft.c -- ST7789 driver level.
  *==========================================================================*/
-#include "tft.h"
-#include "font5x7.h"
+#include "gfx/tft.h"
+#include "gfx/font5x7.h"
 
 #define ST_SWRESET  0x01
 #define ST_SLPOUT   0x11

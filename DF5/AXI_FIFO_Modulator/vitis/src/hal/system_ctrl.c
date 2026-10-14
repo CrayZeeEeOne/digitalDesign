@@ -1,4 +1,4 @@
-#include "system_ctrl.h"
+#include "hal/system_ctrl.h"
 #include "xil_io.h"
 
 void system_ctrl_init(system_ctrl_t *sys, uint32_t base)

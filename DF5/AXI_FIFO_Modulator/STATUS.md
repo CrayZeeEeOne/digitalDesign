@@ -1,6 +1,6 @@
 # DF5 — MicroBlaze: TFT (ST7789) + SD/FatFs + I/Q replay і FSK-демодулятор
 
-> **Версія v0.4.1, стан на 2026-10-13.** На залізі працює: MicroBlaze + SPI-контролер TFT + кнопки, а на дисплеї —
+> **Версія v0.4.2, стан на 2026-10-15.** На залізі працює: MicroBlaze + SPI-контролер TFT + кнопки, а на дисплеї —
 > графічний переглядач (12 екранів у тому самому порядку, що `vivado/sources/sim_data/rtl_demod_plots.html`).
 > RTL FSK-демодулятор (`rtl_demod`, `iq_stream`) готовий **лише в симуляції** і в Block Design ще не доданий.
 > SD/FatFs (Блок 2) не починали. Постановка задачі: `../readme.md`.
@@ -19,10 +19,17 @@ AXI_FIFO_Modulator/
   vivado/sources/bd/   ЗГЕНЕРОВАНЕ: робоча копія BD (у git не йде, відтворюється з create_bd.tcl)
   vivado/sources/sim_data/  sim.iq + очікувані результати + rtl_demod_plots.html (еталонні графіки)
   vivado/constraints/  tft.xdc (TFT, кнопки, такт)
-  vitis/src/           C: драйвер TFT, system_ctrl, graph_viewer, main
-  vitis/bsp/           мінімальний bare-metal BSP: crt0, linker-скрипт, xparameters.h з адресами BD
+  vitis/src/           прошивка за шарами (залежності лише вниз):
+    main.c, config.h     init + головний цикл; усі параметри системи (Fs, частоти, запис)
+    app/                 viewer (екрани, кнопки), capture (запис), view_capture, view_spectrum
+    source/              iq_source.h (інтерфейс джерела I/Q), src_synth (тестовий сигнал)
+    dsp/                 nco_mixer → decimator → discriminator → burst_detect → bit_decoder, FFT
+    gfx/                 tft (ST7789), font5x7, plot (примітиви графіків)
+    hal/                 spi_tft, system_ctrl — драйвери блоків PL
+  vitis/bsp/           мінімальний bare-metal BSP: crt0.S, linker-скрипт, xparameters.h з адресами BD
   vitis/elf/           ЗГЕНЕРОВАНЕ: df5_app.elf — те, що заливається на плату
   tools/               Python: iqgen (генератор I/Q), demod_model (золота модель), plot_rtl_demod (HTML-графіки)
+  tools/host_sim/      ПК-емулятор: усі 12 екранів у PNG без плати + порівняння з golden.md5
   docs/                block1_tft.md — мапа регістрів SPI TFT і піни
 ```
 
@@ -34,7 +41,8 @@ AXI_FIFO_Modulator/
 | `system_ctrl_top` | `0x44A1_0000` | кнопки KEY1/KEY2 з антидребезгом і подіями (W1C), LED, TICK, дільник SD-SPI |
 | `clk_wiz`, `proc_sys_reset`, `mdm`, AXI interconnect | — | такт 100 МГц, скиди, JTAG-дебаг |
 
-Мапа регістрів TFT — [`docs/block1_tft.md`](docs/block1_tft.md); system_ctrl — `vitis/src/system_ctrl.h`.
+Мапа регістрів TFT — [`docs/block1_tft.md`](docs/block1_tft.md); system_ctrl — `vitis/src/hal/system_ctrl.h`.
+Де зберігаються дані графіків — [`docs/graph_data_storage.md`](docs/graph_data_storage.md).
 
 ## Версії: що означає кожна цифра
 
@@ -106,6 +114,12 @@ PATCH росте за фікси, які не додають функцій і �
   BD знову синтезується в стандартному режимі (прибрано `synth_checkpoint_mode None` і ручне додавання
   `microblaze.v`) — через них XSA виходив без `.hwh`/`.mmi`. `run_board.tcl` більше не потребує XSA.
   Перевірено: чистий клон → `build.bat -all` + `build_elf.bat` → `run_board.tcl` → плата працює.
+* **v0.4.2** (2026-10-15) — рефакторинг прошивки без зміни поведінки: `graph_viewer.c` (910 рядків)
+  розбито на шари `app/ source/ dsp/ gfx/ hal/`, параметри винесено в `config.h`, генератор — у
+  `source/src_synth.c` за інтерфейсом `iq_source.h`. Модулі `dsp/` названо за модулями RTL. Точка входу
+  переписана на асемблері (`bsp/crt0.S`), прошивка збирається з `-flto`: код 21.4 → 19.2 КБ. ПК-емулятор
+  перенесено в `tools/host_sim/`. Перевірено: усі 12 екранів піксель-у-піксель як до рефакторингу
+  (`golden.md5`), прошивка працює на платі.
 
 **Наступні кроки до `v1.0.0`**: тестовий екран `TFT TEST` з кольоровими областями, перевірка SPI-сигналів
 (ILA або осцилограф) і запис результату сюди.
@@ -115,21 +129,22 @@ PATCH росте за фікси, які не додають функцій і �
 |---|---|---|---|---|
 | `spi_tft_ctrl` + `tft_top` | ✅ | ✅ `tb_spi_tft_ctrl` | ✅ / ✅ | SPI mode 0, CLKDIV, ручний/авто CS |
 | `system_ctrl_regs` + `_top` | ✅ | ✅ `tb_system_ctrl` | ✅ / ✅ | антидребезг, події кнопок W1C |
-| C-драйвер TFT (`spi_tft.c`, `tft.c`, `font5x7.c`) | — | — | ✅ | шрифт 5×7 лише `0x20–0x5F` (без малих літер) |
+| C-драйвер TFT (`hal/spi_tft.c`, `gfx/tft.c`, `gfx/font5x7.c`) | — | — | ✅ | шрифт 5×7 лише `0x20–0x5F` (без малих літер) |
 | `iq_stream_regs` / `iq_stream_fifo` / `_top` | ✅ | ✅ `tb_iq_stream` | ❌ | FIFO I/Q з MicroBlaze у AXI-Stream |
 | `rtl_demod` (NCO → CIC3 → дискримінатор → power → bit decoder) | ✅ | ✅ `tb_rtl_demod` на `sim.iq` | ❌ | очікування: `sim_data/sim.expect.txt` |
 | `fsk_demod_top` + `tb_fsk_demod_plot` (CSV для графіків) | ✅ | ✅ | ❌ | прогін на 300 МБ капчурі: **Watchdog timeout** на 50 мс (2026-10-11) |
 | `axi_lite_regs` (спільний міст AXI4-Lite) | ✅ | через `tb_iq_stream`/`tb_rtl_demod` | ❌ | |
 | SD-карта (Vivado IP) + FatFs | ❌ | ❌ | ❌ | Блок 2 не почато |
 | I/Q replay з SD, керування демодулятором | ❌ | ❌ | ❌ | Блок 3 |
-| `graph_viewer` (прошивка) | — | ПК-рендер (ST7789-емулятор) | ✅ | див. нижче |
+| Graph viewer (прошивка, `vitis/src/app`) | — | `tools/host_sim` + `golden.md5` | ✅ | див. нижче |
 
 2026-10-13 переганяли лише `tb_spi_tft_ctrl` (T1–T8 PASS). Для решти ✅ означає «є самоперевірний TB»,
 а не «пройшов сьогодні».
 
-## Graph viewer (`vitis/src/graph_viewer.c`)
-Уся обробка — на MicroBlaze, той самий тракт, що й RTL: NCO-мікшер → усереднення /16 → FM-дискримінатор →
-потужність/шум/поріг → прапорці SYNC/PRE/PKT. Вхід — синтетичне джерело в `main.c` (не `sim.iq`).
+## Graph viewer (`vitis/src/app/viewer.c`)
+Уся обробка — на MicroBlaze, ланцюг `dsp/demod_chain.c` з тими самими етапами, що й RTL: `nco_mixer` →
+`decimator` (/16) → `discriminator` → `burst_detect` → `bit_decoder`. Вхід — синтетичне джерело
+`source/src_synth.c` (не `sim.iq`).
 
 | # | Екран | Що показує | Джерело даних |
 |---|---|---|---|
@@ -146,9 +161,9 @@ PATCH росте за фікси, які не додають функцій і �
 Бюджет пам'яті (32 КБ BRAM, стек від `0x7FF0` донизу):
 | Що | Байт |
 |---|---|
-| код (`.text`) | 21 354 |
-| дані (`.bss`): 160 колонок запису × 38 Б, буфер FFT 1 КБ, кільце спектра 1 КБ, блок I/Q 1 КБ | 9 656 |
-| вільно під стек | ≈1 740 (найглибший виклик ≈600; linker перевіряє ≥1 КБ) |
+| код (`.text`, з `-flto`) | 19 216 |
+| дані (`.bss`): 160 колонок запису × 38 Б, буфер FFT 1 КБ, кільце спектра 1 КБ, блок I/Q 1 КБ | 9 676 |
+| вільно під стек | ≈3 860 (найглибший виклик ≈600; linker перевіряє ≥1 КБ) |
 
 ## Збірка і запуск
 Потрібно: Vivado і Vitis 2025.2.1 (`vivado` і `xsct` у `PATH`, `XILINX_VITIS` = каталог Vitis для `mb-gcc`),
@@ -163,6 +178,11 @@ build.bat -all                 # Vivado: проєкт → синтез → ім�
 build_elf.bat                  # прошивка → vitis\elf\df5_app.elf
 xsct run_board.tcl             # залити бітстрім + ELF і запустити MicroBlaze
 ```
+Перевірка екранів без плати (після будь-якої зміни в `vitis/src`):
+```
+tools\host_sim\run_host_sim.bat           # рендер 12 екранів → out\montage.png, порівняння з golden.md5
+tools\host_sim\run_host_sim.bat -update   # прийняти нову картинку як еталон (після навмисної зміни)
+```
 Після правок BD у GUI (`build.bat -gui`) перегенеруй `scripts/create_bd.tcl`:
 `write_bd_tcl -force -no_project_wrapper scripts/create_bd.tcl`, потім поверни у файл заголовок,
 `set run_remote_bd_flow 0` і виклик `cr_bd_microblaze ""` в кінці.
@@ -176,12 +196,12 @@ xsct run_board.tcl             # залити бітстрім + ELF і запу
 
 ## Відомі проблеми / TODO
 * **Переглядач показує не той сигнал, що HTML.** `sim.iq` має зсув каналу −1087 кГц, девіацію ±25 кГц,
-  GFSK BT 0.5 і пакети по 108 750 відліків; джерело в `main.c` — −250 кГц, ±50 кГц, 2-FSK. Зум спектра
+  GFSK BT 0.5 і пакети по 108 750 відліків; `source/src_synth.c` — −250 кГц, ±50 кГц, 2-FSK. Зум спектра
   ±562 кГц сигнал з `sim.iq` не покаже. Наступний крок — replay `sim.iq` (SD або вбудований фрагмент).
 * **SYNC/PRE/PKT у переглядачі — заглушка**: прапорці за віком burst (8/16/28 відліків), а не реальний
   пошук синхрослова, як у `demod_bit_decoder`.
-* **BRAM майже повний** (≈31.2 з 32 КБ). Будь-яка нова функція в прошивці потребує або більшої LMB,
-  або зовнішньої пам'яті.
+* **BRAM тісний** (≈28.9 з 32 КБ після `-flto`). Для SD/FatFs (Блок 2) пам'яті, найімовірніше, не
+  вистачить — знадобиться більша LMB або зовнішня пам'ять.
 * Розмір панелі 240×320 виведено з налаштувань драйвера; на дисплеї візуально ще не підтверджено.
 * Немає UART: `xil_printf` — заглушка (`vitis/bsp/stubs.c`), діагностика лише через TFT або JTAG.
 * `patch_microblaze_bd_buttons.tcl` жорстко знімає скиди: `Reset` MicroBlaze і LMB — константа 0,

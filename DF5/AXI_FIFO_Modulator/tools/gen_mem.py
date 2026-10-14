@@ -4,7 +4,7 @@ gen_mem.py -- генерує таблиці для RTL ($readmemh) і для C-�
 
     vivado/sources/mem/nco_sin_1024.mem   1024 x int16, повний період синуса
                                           (cos = sin з індексом +256)
-    vitis/src/dsp_tables.c                таблиці для FFT у MicroBlaze:
+    vitis/src/dsp/dsp_tables.c            таблиці для DSP у MicroBlaze:
                                           синус 1024/4+1 точок, вікно Ханна 1024
 
 Запускати з каталогу tools/:  python gen_mem.py
@@ -14,7 +14,7 @@ import os
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 MEM_DIR = os.path.join(ROOT, "vivado", "sources", "mem")
-SRC_DIR = os.path.join(ROOT, "vitis", "src")
+SRC_DIR = os.path.join(ROOT, "vitis", "src", "dsp")
 
 NCO_N = 1024
 FFT_N = 1024
@@ -45,7 +45,7 @@ def main():
                 " * dsp_sin_q15[k] = sin(2*pi*k/1024) для k = 0..256 (чверть періоду + 1),\n"
                 " * dsp_hann_q15[n] = 0.5*(1 - cos(2*pi*n/1024)) для n = 0..1023.\n"
                 " */\n")
-        f.write('#include "dsp_tables.h"\n\n')
+        f.write('#include "dsp/dsp_tables.h"\n\n')
         f.write("const int16_t dsp_sin_q15[DSP_FFT_N / 4 + 1] = {\n")
         vals = [q15(math.sin(2 * math.pi * k / FFT_N)) for k in range(FFT_N // 4 + 1)]
         for i in range(0, len(vals), 12):

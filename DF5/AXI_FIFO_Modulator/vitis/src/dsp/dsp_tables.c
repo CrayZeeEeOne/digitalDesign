@@ -3,7 +3,7 @@
  * dsp_sin_q15[k] = sin(2*pi*k/1024) для k = 0..256 (чверть періоду + 1),
  * dsp_hann_q15[n] = 0.5*(1 - cos(2*pi*n/1024)) для n = 0..1023.
  */
-#include "dsp_tables.h"
+#include "dsp/dsp_tables.h"
 
 const int16_t dsp_sin_q15[DSP_FFT_N / 4 + 1] = {
          0,    201,    402,    603,    804,   1005,   1206,   1407,   1608,   1809,   2009,   2210,

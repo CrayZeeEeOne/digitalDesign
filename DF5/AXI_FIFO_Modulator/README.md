@@ -88,12 +88,20 @@ Button navigation is handled by `system_ctrl_regs` events:
 - KEY1 (`btn1_n`) cycles view forward
 - KEY2 (`btn2_n`) cycles view backward
 
-Main files:
-- `vitis/src/main.c`
-- `vitis/src/graph_viewer.c`
-- `vitis/src/graph_viewer.h`
-- `vitis/src/system_ctrl.c`
-- `vitis/src/system_ctrl.h`
+Firmware layout (`vitis/src`, dependencies only point down the list):
+
+| Folder | What lives there |
+|---|---|
+| `main.c`, `config.h` | init + main loop; all system parameters (Fs, frequencies, capture length) |
+| `app/` | `viewer` (screens, keys), `capture` (the static recording), `view_capture` (time plots, constellation), `view_spectrum` (live spectrogram/waterfall) |
+| `source/` | `iq_source.h` interface; `src_synth` test signal (SD replay goes here next) |
+| `dsp/` | demodulator chain `nco_mixer -> decimator -> discriminator -> burst_detect -> bit_decoder`, FFT, spectrum; no TFT, builds on a PC |
+| `gfx/` | ST7789 driver `tft`, font, `plot` primitives |
+| `hal/` | drivers of the PL blocks: `spi_tft`, `system_ctrl` |
+| `../bsp/` | `crt0.S`, linker script, `xparameters.h` with BD addresses |
+
+All 12 screens can be rendered on a PC, without the board:
+`tools/host_sim/run_host_sim.bat` (compares with `tools/host_sim/golden.md5`).
 
 Constraints update in `vivado/constraints/tft.xdc`:
 - `btn1_n` -> `W21`
