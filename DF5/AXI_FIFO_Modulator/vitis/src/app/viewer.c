@@ -3,17 +3,18 @@
 #include "gfx/plot.h"
 #include "app/view_capture.h"
 
-/* NCO step that moves the channel to 0 Hz (2^16 = Fs). */
-#define NCO_INC ((uint16_t)((65536u * (CFG_CENTER_FREQ_HZ - CFG_CHANNEL_FREQ_HZ) / CFG_SAMPLE_RATE_HZ) & 0xFFFFu))
+/*
+ * NCO step that moves the channel to 0 Hz: (center - channel) / Fs * 2^16, rounded.
+ * 64-bit math: 250 kHz * 2^16 does not fit in 32 bits (the wrapped value used to
+ * tune the NCO to ~+53 kHz instead of +250 kHz).
+ */
+#define NCO_OFFSET_HZ ((int64_t)CFG_CENTER_FREQ_HZ - (int64_t)CFG_CHANNEL_FREQ_HZ)
+#define NCO_INC ((uint16_t)((NCO_OFFSET_HZ * 65536 + (NCO_OFFSET_HZ >= 0 ? 1 : -1) * (int64_t)(CFG_SAMPLE_RATE_HZ / 2))                             / (int64_t)CFG_SAMPLE_RATE_HZ))
 
 void viewer_init(viewer_t *v)
 {
-    uint16_t inc = NCO_INC;
-
-    if (inc == 0u) inc = 911u;
-
     v->mode = VIEW_INPUT_IQ;
-    demod_chain_init(&v->chain, inc);
+    demod_chain_init(&v->chain, NCO_INC);
     capture_init(&v->cap);
     live_spectrum_stop(&v->live);
 }
