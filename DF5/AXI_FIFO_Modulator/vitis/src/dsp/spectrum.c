@@ -3,8 +3,7 @@
 #include "dsp/dsp_tables.h"
 #include "dsp/fft.h"
 
-/* ~16*log2(x), clamped to 0..255. */
-static uint8_t log2_u8(uint32_t x)
+uint8_t spec_log(uint32_t x)
 {
     uint32_t n = 0u;
     uint32_t frac;
@@ -16,7 +15,13 @@ static uint8_t log2_u8(uint32_t x)
     return (uint8_t)(n > 255u ? 255u : n);
 }
 
-void spectrum_column(const int16_t *iq, int16_t *re, int16_t *im, uint8_t *col)
+int16_t spec_log_to_ddb(uint8_t l)
+{
+    /* 20*log10(2)/16 dB per step = 0.3763 dB ~ 241/64 * 0.1 dB */
+    return (int16_t)(((int32_t)l - SPEC_LOG_0DBFS) * 241 / 64);
+}
+
+void spectrum_mag(const int16_t *iq, int16_t *re, int16_t *im, uint16_t *mag)
 {
     uint16_t n;
 
@@ -30,6 +35,6 @@ void spectrum_column(const int16_t *iq, int16_t *re, int16_t *im, uint8_t *col)
 
     for (n = 0u; n < SPEC_BINS; n++) {
         uint16_t k = (uint16_t)((n - SPEC_BINS / 2u) & (SPEC_FFT_N - 1u));
-        col[n] = log2_u8((uint32_t)(abs32(re[k]) + abs32(im[k])));
+        mag[n] = clamp_u16((uint32_t)(abs32(re[k]) + abs32(im[k])));
     }
 }

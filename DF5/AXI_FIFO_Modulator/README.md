@@ -72,35 +72,33 @@ Block Design редагується в GUI (`build.bat -gui`).
 | 2 — SD-карта: Vivado IP і FatFs | — | |
 | 3 — I/Q replay, Viewer, Demodulator | — | |
 
-## Block 3 LCD graph viewer (MicroBlaze)
+## Block 3 signal viewer (MicroBlaze)
 
-A firmware viewer is added in `vitis/src` to render demodulator-style plots directly on ST7789 LCD with all calculations on MicroBlaze:
-- input I/Q
-- mixer I/Q
-- CIC decimated I/Q
-- discriminator + power/burst
-- spectrogram
-- waterfall
-- constellation
-- decoder state timeline
+The firmware records one capture with two packets and shows it on the ST7789 as four screens,
+all calculations on MicroBlaze:
 
-Button navigation is handled by `system_ctrl_regs` events:
-- KEY1 (`btn1_n`) cycles view forward
-- KEY2 (`btn2_n`) cycles view backward
+1. `RAW I/Q` -- input I and Q over time, packets marked P1/P2
+2. `BITS` -- bits decoded from both packets: waveform + hex
+3. `FFT` -- level in dBFS vs frequency (max hold), peak marker, waterfall strip underneath
+4. `WATERFALL` -- frequency vs time
+
+Keys:
+- K1 short -- next screen; K2 short -- zoom x1 -> x2 -> x4 -> x8 on the current screen
+- K1 held -- scroll the zoomed plot back; K2 held -- scroll forward
 
 Firmware layout (`vitis/src`, dependencies only point down the list):
 
 | Folder | What lives there |
 |---|---|
 | `main.c`, `config.h` | init + main loop; all system parameters (Fs, frequencies, capture length) |
-| `app/` | `viewer` (screens, keys), `capture` (the static recording), `view_capture` (time plots, constellation), `view_spectrum` (live spectrogram/waterfall) |
+| `app/` | `viewer` (screens), `keys` (short press / hold), `zoom`, `capture` (the recording), `view_time` (raw, bits), `view_freq` (FFT, waterfall) |
 | `source/` | `iq_source.h` interface; `src_synth` test signal (SD replay goes here next) |
 | `dsp/` | demodulator chain `nco_mixer -> decimator -> discriminator -> burst_detect -> bit_decoder`, FFT, spectrum; no TFT, builds on a PC |
 | `gfx/` | ST7789 driver `tft`, font, `plot` primitives |
 | `hal/` | drivers of the PL blocks: `spi_tft`, `system_ctrl` |
 | `../bsp/` | `crt0.S`, linker script, `xparameters.h` with BD addresses |
 
-All 12 screens can be rendered on a PC, without the board:
+All screens can be rendered on a PC, without the board:
 `tools/host_sim/run_host_sim.bat` (compares with `tools/host_sim/golden.md5`).
 
 Constraints update in `vivado/constraints/tft.xdc`:

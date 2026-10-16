@@ -2,28 +2,32 @@
 """
 check.py -- compare rendered viewer screens with golden.md5.
 
-    check.py OUT_DIR            compare OUT_DIR/viewNN.ppm with golden.md5
+    check.py OUT_DIR            compare OUT_DIR/view*.ppm with golden.md5
     check.py OUT_DIR -update    write golden.md5 from OUT_DIR
 
 A mismatch means a screen looks different from the stored reference: expected
 after an intended visual change (then run with -update), a bug otherwise.
-Also writes OUT_DIR/montage.png (all screens, 4x3) if Pillow is installed.
+Also writes OUT_DIR/montage.png (all screens) if Pillow is installed.
 """
+import glob
 import hashlib
 import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GOLDEN = os.path.join(HERE, "golden.md5")
-VIEWS = 12
+COLS = 3
+
+
+def screens(out_dir):
+    return sorted(glob.glob(os.path.join(out_dir, "view*.ppm")))
 
 
 def digests(out_dir):
     res = {}
-    for i in range(VIEWS):
-        name = "view%02d.ppm" % i
-        with open(os.path.join(out_dir, name), "rb") as f:
-            res[name] = hashlib.md5(f.read()).hexdigest()
+    for path in screens(out_dir):
+        with open(path, "rb") as f:
+            res[os.path.basename(path)] = hashlib.md5(f.read()).hexdigest()
     return res
 
 
@@ -32,11 +36,14 @@ def montage(out_dir):
         from PIL import Image
     except ImportError:
         return
-    ims = [Image.open(os.path.join(out_dir, "view%02d.ppm" % i)) for i in range(VIEWS)]
+    ims = [Image.open(p) for p in screens(out_dir)]
+    if not ims:
+        return
     w, h = ims[0].size
-    sheet = Image.new("RGB", (4 * (w + 4), 3 * (h + 4)), (40, 40, 40))
+    rows = (len(ims) + COLS - 1) // COLS
+    sheet = Image.new("RGB", (COLS * (w + 4), rows * (h + 4)), (40, 40, 40))
     for i, im in enumerate(ims):
-        sheet.paste(im, ((i % 4) * (w + 4), (i // 4) * (h + 4)))
+        sheet.paste(im, ((i % COLS) * (w + 4), (i // COLS) * (h + 4)))
     sheet.save(os.path.join(out_dir, "montage.png"))
 
 
@@ -65,10 +72,10 @@ def main():
             digest, name = line.split()
             golden[name] = digest
 
-    bad = [n for n in sorted(cur) if golden.get(n) != cur[n]]
-    for n in sorted(cur):
+    bad = [n for n in sorted(set(cur) | set(golden)) if golden.get(n) != cur.get(n)]
+    for n in sorted(set(cur) | set(golden)):
         print("%s  %s" % ("DIFF" if n in bad else "same", n))
-    print("%d of %d screens differ from golden.md5" % (len(bad), len(cur)))
+    print("%d of %d screens differ from golden.md5" % (len(bad), len(set(cur) | set(golden))))
     return 1 if bad else 0
 
 

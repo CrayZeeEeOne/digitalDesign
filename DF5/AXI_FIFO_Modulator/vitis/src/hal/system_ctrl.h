@@ -31,4 +31,7 @@ uint32_t system_ctrl_get_press_events(const system_ctrl_t *sys);
 uint32_t system_ctrl_get_buttons_raw(const system_ctrl_t *sys);
 void system_ctrl_clear_press_events(const system_ctrl_t *sys, uint32_t mask);
 
+/* Free-running AXI clock counter (wraps every 2^32 cycles). */
+uint32_t system_ctrl_get_tick(const system_ctrl_t *sys);
+
 #endif

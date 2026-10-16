@@ -30,3 +30,8 @@ void system_ctrl_clear_press_events(const system_ctrl_t *sys, uint32_t mask)
 {
     system_ctrl_write(sys, SYS_REG_BTN_EVENT, mask & (SYS_BTN1_MASK | SYS_BTN2_MASK));
 }
+
+uint32_t system_ctrl_get_tick(const system_ctrl_t *sys)
+{
+    return system_ctrl_read(sys, SYS_REG_TICK);
+}

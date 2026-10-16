@@ -1,25 +1,40 @@
 #include "dsp/bit_decoder.h"
-#include "dsp/dsp_math.h"
 
-uint8_t bit_decoder_step(bit_decoder_t *b, int32_t dphi, int burst, int burst_rise, uint32_t dec_count)
+#define AFC_SHIFT 6            /* favg += (dphi - favg) / 64 */
+
+void bit_decoder_init(bit_decoder_t *b, uint16_t bit_inc)
 {
-    uint8_t flags = 0u;
-    uint8_t was_pkt = b->pkt_active;
+    b->bit_inc = bit_inc;
+    bit_decoder_start(b);
+}
 
-    if (burst_rise) b->burst_start = dec_count;
+void bit_decoder_start(bit_decoder_t *b)
+{
+    b->phase = 0x8000u;
+    b->favg = 0;
+    b->last = 0u;
+}
 
-    b->favg = (int16_t)((7 * (int32_t)b->favg + dphi) / 8);
-    b->dev = (int16_t)((15 * (int32_t)b->dev + abs32(dphi - b->favg)) / 16);
+int bit_decoder_step(bit_decoder_t *b, int32_t dphi, uint8_t *bit)
+{
+    uint8_t s;
+    uint16_t prev_phase = b->phase;
 
-    b->pkt_active = 0u;
-    if (burst) {
-        uint32_t age = dec_count - b->burst_start;
-        flags |= DEMOD_F_BURST;
-        if (age > 8u)  flags |= DEMOD_F_SYNC;
-        if (age > 16u) flags |= DEMOD_F_PRE;
-        if (age > 28u) { b->pkt_active = 1u; flags |= DEMOD_F_PKT; }
+    b->favg += ((dphi << 8) - b->favg) >> AFC_SHIFT;
+    s = (uint8_t)((dphi << 8) < b->favg);
+
+    if (s != b->last) {
+        /* transition: the phase should be at 1/2 here */
+        int32_t err = (int32_t)b->phase - 0x8000;
+        b->phase = (uint16_t)(b->phase - err / 4);
+        b->last = s;
+        prev_phase = b->phase;
     }
 
-    if (was_pkt && !b->pkt_active) flags |= DEMOD_F_RES;
-    return flags;
+    b->phase = (uint16_t)(b->phase + b->bit_inc);
+    if (b->phase < prev_phase) {       /* wrapped: middle of a bit */
+        *bit = s;
+        return 1;
+    }
+    return 0;
 }

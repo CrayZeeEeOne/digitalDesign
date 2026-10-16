@@ -71,7 +71,7 @@ static int32_t series_val(const plot_series_t *s, const void *field0, uint16_t i
 {
     const uint8_t *p = (const uint8_t *)field0 + (uint32_t)i * s->stride;
 
-    if (s->is_signed) return *(const int16_t *)p;
+    if (s->is_signed) return s->is_byte ? *(const int8_t *)p : *(const int16_t *)p;
     if (s->map) return (int32_t)s->map(*(const uint16_t *)p);
     return *(const uint16_t *)p;
 }
@@ -111,35 +111,5 @@ void plot_series_draw(tft_t *tft, const plot_box_t *b, const plot_series_t *s, i
                            (uint16_t)(b->y0 + 1u), (uint16_t)(b->y0 + b->h - 2u), color);
         pt = t;
         pb = bo;
-    }
-}
-
-void plot_flag_steps(tft_t *tft, const plot_box_t *b, const uint8_t *flags, uint16_t stride, uint16_t count,
-                     uint8_t mask, uint8_t level, uint16_t color)
-{
-    uint16_t x;
-    int16_t prev = 0;
-    int16_t y_lo = (int16_t)(b->y0 + b->h - 3u);
-    int16_t y_hi = (int16_t)(y_lo - ((b->h - 6u) * level) / 16u);
-
-    for (x = 0u; x < b->w; x++) {
-        uint16_t i = plot_x_to_idx(b, x, count);
-        int16_t y = (flags[(uint32_t)i * stride] & mask) ? y_hi : y_lo;
-
-        if (x == 0u) prev = y;
-        plot_vline_clipped(tft, (uint16_t)(b->x0 + x), prev, y, (uint16_t)(b->y0 + 1u), (uint16_t)(b->y0 + b->h - 2u), color);
-        prev = y;
-    }
-}
-
-uint16_t plot_heat(uint8_t v)
-{
-    uint8_t t = (uint8_t)((v & 63u) << 2);
-
-    switch (v >> 6) {
-    case 0:  return TFT_RGB(0, 0, t);
-    case 1:  return TFT_RGB(0, t, 255);
-    case 2:  return TFT_RGB(t, 255, 255 - t);
-    default: return TFT_RGB(255, 255 - t, 0);
     }
 }

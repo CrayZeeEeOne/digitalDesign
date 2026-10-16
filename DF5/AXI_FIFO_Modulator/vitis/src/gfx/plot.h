@@ -22,7 +22,8 @@ typedef struct {
     const void *hi;
     uint16_t stride;
     uint16_t count;
-    uint8_t is_signed;          /* 1: int16, zero in the middle; 0: uint16, zero at the bottom */
+    uint8_t is_signed;          /* 1: signed, zero in the middle; 0: uint16, zero at the bottom */
+    uint8_t is_byte;            /* signed values stored as int8 instead of int16 */
     uint32_t (*map)(uint32_t);  /* optional transform of uint16 values, NULL = none */
 } plot_series_t;
 
@@ -47,13 +48,5 @@ int32_t plot_series_scale(const plot_series_t *s, int32_t m);
 
 /* Min/max envelope over the whole box width, joined to the previous column. */
 void plot_series_draw(tft_t *tft, const plot_box_t *b, const plot_series_t *s, int32_t scale, uint16_t color);
-
-/* Bit `mask` of flags[i * stride] as a step line: low at the bottom, high at level/16 of the box. */
-void plot_flag_steps(tft_t *tft, const plot_box_t *b, const uint8_t *flags, uint16_t stride, uint16_t count,
-                     uint8_t mask, uint8_t level, uint16_t color);
-
-/*------------------------------------------------------------ colors ----*/
-/* 0..255 -> black, blue, cyan, yellow, red. */
-uint16_t plot_heat(uint8_t v);
 
 #endif

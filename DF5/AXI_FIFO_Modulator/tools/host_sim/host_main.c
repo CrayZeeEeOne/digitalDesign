@@ -1,10 +1,10 @@
 /*
- * host_main.c -- run the firmware's viewer on a PC and save every screen.
+ * host_main.c -- run the firmware's viewer on a PC and save the screens.
  *
  * Same code as on the board (vitis/src: source, dsp, app, gfx), with the SPI
- * driver replaced by st7789_emu.c. For each of the 12 views: draw it, keep
- * feeding blocks while the view needs data (live spectrum), then save the
- * panel as out/viewNN.ppm.
+ * driver replaced by st7789_emu.c. Saves every screen at zoom x1 and x4 (bits
+ * also at x8) as out/viewN_xZ.ppm, and checks the decoded bits against the
+ * bits the test source actually sent.
  *
  *   host_sim.exe [out_dir]
  */
@@ -21,13 +21,6 @@ static tft_t tft;
 static src_synth_t synth;
 static viewer_t viewer;
 static int16_t iq[CFG_IQ_BLOCK * 2u];
-
-static int feed(void)
-{
-    iq_source_read(&synth.base, iq, CFG_IQ_BLOCK);
-    viewer_process_block(&viewer, iq, CFG_IQ_BLOCK);
-    return 1;
-}
 
 static int save_ppm(const char *path)
 {
@@ -47,33 +40,74 @@ static int save_ppm(const char *path)
     return 0;
 }
 
+/* Bit k of a packet as sent by src_synth (see src_synth.c). */
+static uint8_t sent_bit(uint32_t sym)
+{
+    return (uint8_t)((sym < SRC_PREAMBLE) ? (sym & 1u) : (((sym * 0x9E3779B1u) >> 29) & 1u));
+}
+
+/* Best alignment of the decoded bits with the sent ones; prints the bit errors. */
+static int check_bits(const cap_pkt_t *p, int idx)
+{
+    uint32_t best_err = 0xFFFFFFFFu, best_off = 0u, off, k;
+    uint32_t n = p->nbits;
+
+    for (off = 0u; off < 64u; off++) {
+        uint32_t err = 0u, cnt = 0u;
+        for (k = 0u; k < n && off + k < SRC_PKT_SYMS; k++, cnt++)
+            err += cap_pkt_bit(p, (uint16_t)k) != sent_bit(off + k);
+        if (cnt > n / 2u && err < best_err) { best_err = err; best_off = off; }
+    }
+    printf("packet %d: %u bits decoded, aligned at sent bit %u, %u bit errors\n",
+           idx + 1, (unsigned)n, (unsigned)best_off, (unsigned)best_err);
+    return (int)best_err;
+}
+
+static int render(int view, int zoom_presses, const char *out)
+{
+    char path[512];
+    int i;
+
+    viewer_set_mode(&viewer, (view_mode_t)view);
+    viewer.zoom[view].level = 0u;
+    viewer.zoom[view].off = 0u;
+    for (i = 0; i < zoom_presses; i++) viewer_key(&viewer, KEY_ZOOM);
+    viewer_draw(&viewer, &tft);
+
+    snprintf(path, sizeof(path), "%s/view%d_x%d.ppm", out, view, 1 << zoom_presses);
+    if (save_ppm(path) != 0) {
+        fprintf(stderr, "ERROR: cannot write %s\n", path);
+        return 1;
+    }
+    printf("view %d x%d -> %s\n", view, 1 << zoom_presses, path);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *out = (argc > 1) ? argv[1] : "out";
-    int m, blocks = 0;
+    int m, blocks = 0, errors = 0;
 
     tft_init(&tft, &spi, TFT_ROT_90);
     src_synth_init(&synth);
     viewer_init(&viewer);
 
-    while (!viewer_done(&viewer)) blocks += feed();
-    printf("capture: %d blocks, %u bursts, panel %ux%u\n",
-           blocks, (unsigned)viewer.cap.burst_total, tft.w, tft.h);
+    while (!viewer_done(&viewer)) {
+        iq_source_read(&synth.base, iq, CFG_IQ_BLOCK);
+        viewer_process_block(&viewer, iq, CFG_IQ_BLOCK);
+        blocks++;
+    }
+    printf("capture: %d blocks, %u packets, panel %ux%u\n",
+           blocks, (unsigned)viewer.cap.npkt, tft.w, tft.h);
+    for (m = 0; m < viewer.cap.npkt; m++) {
+        const cap_pkt_t *p = &viewer.cap.pkt[m];
+        printf("packet %d: samples %u..%u\n", m + 1, (unsigned)p->start, (unsigned)p->end);
+        errors += check_bits(p, m);
+    }
 
     for (m = 0; m < VIEW_COUNT; m++) {
-        char path[512];
-        int n = 0;
-
-        viewer_set_mode(&viewer, (view_mode_t)m);
-        viewer_draw(&viewer, &tft);
-        while (viewer_busy(&viewer)) n += feed();
-
-        snprintf(path, sizeof(path), "%s/view%02d.ppm", out, m);
-        if (save_ppm(path) != 0) {
-            fprintf(stderr, "ERROR: cannot write %s\n", path);
-            return 1;
-        }
-        printf("view %2d: %4d live blocks -> %s\n", m, n, path);
+        if (render(m, 0, out) || render(m, 2, out)) return 1;
+        if (m == VIEW_BITS && render(m, 3, out)) return 1;
     }
-    return 0;
+    return errors ? 2 : 0;
 }
