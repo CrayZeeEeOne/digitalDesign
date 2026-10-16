@@ -4,9 +4,9 @@
  * screens:
  *   RAW I/Q    the input signal over time
  *   BITS       bits decoded from both packets (waveform + hex)
- *   FFT        level in dBFS vs frequency, waterfall strip underneath
+ *   FFT        level in dBFS vs frequency (max hold), peak marker
  *   WATERFALL  frequency vs time
- * Each screen keeps its own zoom (x1..x8) and position (app/keys.h for the keys).
+ * Each screen keeps its own zoom (x1..x16) and position (app/keys.h for the keys).
  */
 #ifndef VIEWER_H
 #define VIEWER_H

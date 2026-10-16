@@ -104,7 +104,7 @@ void view_fft(tft_t *tft, const capture_t *c, const zoom_t *z)
 {
     uint16_t x0 = 6u, y0 = 28u;
     uint16_t w = (uint16_t)(tft->w - 12u - 26u);      /* 26 px for the dB labels */
-    uint16_t h = 141u;                                /* 10 divisions of 14 px */
+    uint16_t h = (uint16_t)(tft->h - 47u);            /* 10 divisions, labels underneath */
     uint16_t span = zoom_span(z, VIEW_FREQ_POINTS);
     uint16_t x, k, peak = 0u;
     int16_t prev = 0;
@@ -158,9 +158,6 @@ void view_fft(tft_t *tft, const capture_t *c, const zoom_t *z)
     tft_draw_text(tft, (uint16_t)(x0 + w - 52u), (uint16_t)(y0 + 3u), "MAX HOLD", TFT_GRAY, TFT_BLACK, 1);
 
     freq_axis(tft, x0, w, (uint16_t)(y0 + h + 2u), z);
-
-    /* waterfall strip, one pixel row per waterfall row */
-    draw_waterfall(tft, c, z, x0, (uint16_t)(y0 + h + 13u), w, CAP_WF_ROWS);
 }
 
 void view_waterfall(tft_t *tft, const capture_t *c, const zoom_t *z)

@@ -3,7 +3,7 @@
  *
  * Same code as on the board (vitis/src: source, dsp, app, gfx), with the SPI
  * driver replaced by st7789_emu.c. Saves every screen at zoom x1 and x4 (bits
- * also at x8) as out/viewN_xZ.ppm, and checks the decoded bits against the
+ * and FFT also at x16) as out/viewN_xZ.ppm, and checks the decoded bits against the
  * bits the test source actually sent.
  *
  *   host_sim.exe [out_dir]
@@ -107,7 +107,7 @@ int main(int argc, char **argv)
 
     for (m = 0; m < VIEW_COUNT; m++) {
         if (render(m, 0, out) || render(m, 2, out)) return 1;
-        if (m == VIEW_BITS && render(m, 3, out)) return 1;
+        if ((m == VIEW_BITS || m == VIEW_FFT) && render(m, 4, out)) return 1;
     }
     return errors ? 2 : 0;
 }

@@ -79,11 +79,11 @@ all calculations on MicroBlaze:
 
 1. `RAW I/Q` -- input I and Q over time, packets marked P1/P2
 2. `BITS` -- bits decoded from both packets: waveform + hex
-3. `FFT` -- level in dBFS vs frequency (max hold), peak marker, waterfall strip underneath
+3. `FFT` -- level in dBFS vs frequency (max hold), peak marker
 4. `WATERFALL` -- frequency vs time
 
 Keys:
-- K1 short -- next screen; K2 short -- zoom x1 -> x2 -> x4 -> x8 on the current screen
+- K1 short -- next screen; K2 short -- zoom x1 -> x2 -> x4 -> x8 -> x16 on the current screen
 - K1 held -- scroll the zoomed plot back; K2 held -- scroll forward
 
 Firmware layout (`vitis/src`, dependencies only point down the list):

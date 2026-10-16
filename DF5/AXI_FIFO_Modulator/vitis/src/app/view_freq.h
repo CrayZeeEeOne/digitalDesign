@@ -1,7 +1,7 @@
 /*
  * view_freq.h -- screens over frequency (spectrum-analyzer style):
  *   FFT        level in dBFS vs frequency (max hold over the capture), with a
- *              peak marker and a waterfall strip underneath;
+ *              peak marker;
  *   WATERFALL  frequency (x) vs time (y, capture start at the top), color = level.
  * The zoom window counts in spectrum bins (SPEC_BINS).
  */

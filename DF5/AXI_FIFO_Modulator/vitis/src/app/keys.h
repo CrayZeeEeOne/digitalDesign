@@ -2,7 +2,7 @@
  * keys.h -- two buttons, short press vs hold.
  *
  *   K1 short press  -> KEY_NEXT       (next screen)
- *   K2 short press  -> KEY_ZOOM       (x1 -> x2 -> x4 -> x8 -> x1)
+ *   K2 short press  -> KEY_ZOOM       (x1 -> x2 -> x4 -> x8 -> x16 -> x1)
  *   K1 held         -> KEY_PAN_BACK   repeated while held (towards the start)
  *   K2 held         -> KEY_PAN_FWD    repeated while held (towards the end)
  *
