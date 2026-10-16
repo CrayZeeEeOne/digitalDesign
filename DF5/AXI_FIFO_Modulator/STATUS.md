@@ -43,6 +43,7 @@ AXI_FIFO_Modulator/
 
 Мапа регістрів TFT — [`docs/block1_tft.md`](docs/block1_tft.md); system_ctrl — `vitis/src/hal/system_ctrl.h`.
 Де зберігаються дані графіків — [`docs/graph_data_storage.md`](docs/graph_data_storage.md).
+Як влаштований увесь проєкт, від заліза до екранів — [`docs/architecture.md`](docs/architecture.md).
 
 ## Версії: що означає кожна цифра
 
