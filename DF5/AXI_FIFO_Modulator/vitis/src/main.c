@@ -6,7 +6,7 @@
  *
  *   app/     capture data, screens, keys    gfx/  TFT driver, plot primitives
  *   hal/     drivers of the PL blocks       bsp/  startup, linker script, addresses
- *   dsp/, source/  the same DSP in C -- host simulator only (tools/host_sim)
+ *   the same DSP in C, for the host simulator only: tools/host_sim/model
  */
 #include <stdint.h>
 #include "xparameters.h"

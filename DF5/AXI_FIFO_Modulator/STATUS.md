@@ -21,15 +21,14 @@ AXI_FIFO_Modulator/
   vivado/constraints/  tft.xdc (TFT, кнопки, такт)
   vitis/src/           прошивка за шарами (залежності лише вниз):
     main.c, config.h     init + головний цикл; усі параметри системи (Fs, частоти, запис)
-    app/                 viewer (екрани), keys, zoom, capture (запис), view_time, view_freq
-    source/              iq_source.h (інтерфейс джерела I/Q), src_synth (тестовий сигнал)
-    dsp/                 nco_mixer → decimator → discriminator → burst_detect → bit_decoder, FFT
+    app/                 viewer (екрани), keys, zoom, capture.h (дані запису з PL), view_time, view_freq
     gfx/                 tft (ST7789), font5x7, plot (примітиви графіків)
-    hal/                 spi_tft, system_ctrl — драйвери блоків PL
+    hal/                 spi_tft, system_ctrl, dsp_rtl (увесь DSP у PL), axi_qspi + sd_card — драйвери
   vitis/bsp/           мінімальний bare-metal BSP: crt0.S, linker-скрипт, xparameters.h з адресами BD
   vitis/elf/           ЗГЕНЕРОВАНЕ: df5_app.elf — те, що заливається на плату
   tools/               Python: iqgen (генератор I/Q), demod_model (золота модель), plot_rtl_demod (HTML-графіки)
-  tools/host_sim/      ПК-емулятор: усі екрани в PNG без плати + перевірка бітів + golden.md5
+  tools/host_sim/      ПК-емулятор: усі екрани в PNG без плати + перевірка бітів + golden.md5;
+                       model/ -- C-модель DSP (dsp/, source/), лише для емулятора
   docs/                block1_tft.md — мапа регістрів SPI TFT і піни
 ```
 

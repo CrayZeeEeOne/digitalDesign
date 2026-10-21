@@ -2,8 +2,8 @@
  * capture.h -- one fixed recording for the static screens (the data only).
  *
  * On the board the RTL fills it (dsp_top: dsp_capture + dsp_spectrum, read out
- * by hal/dsp_rtl.c); on the PC the C model dsp/capture_model.c computes the same
- * thing from software I/Q. The capture starts in a gap (right after a packet
+ * by hal/dsp_rtl.c); on the PC the C model (tools/host_sim/model/dsp/
+ * capture_model.c) computes the same thing from software I/Q. The capture starts in a gap (right after a packet
  * ends) and covers CFG_CAPTURE_SAMPLES input samples:
  *   raw[]    min/max of input I and Q in CAP_RAW_COLS columns, in steps of
  *            2^CAP_RAW_SHIFT (int8, saturated); raw samples are not kept

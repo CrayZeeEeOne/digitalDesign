@@ -62,8 +62,6 @@ __pycache__/
 tmp_*
 scripts/simple_tft_*.v
 scripts/direct_impl_from_dcp.tcl
-scripts/build_elf.tcl
-vitis/src/board_boot.c
 
 # Host simulator output (tools/host_sim/run_host_sim.bat)
 tools/host_sim/out/

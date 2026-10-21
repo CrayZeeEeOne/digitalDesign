@@ -1,7 +1,7 @@
 /*
  * viewer.h -- the signal viewer: shows one capture (app/capture.h) with two
  * packets as screens. The capture comes from outside -- the RTL on the board
- * (hal/dsp_rtl.h), the C model on the PC (dsp/capture_model.h):
+ * (hal/dsp_rtl.h), the C model on the PC (tools/host_sim/model):
  *   RAW I/Q    the input signal over time
  *   BITS       bits decoded from both packets (waveform + hex)
  *   FFT        level in dBFS vs frequency (max hold), peak marker

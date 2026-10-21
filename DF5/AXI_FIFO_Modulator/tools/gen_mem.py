@@ -7,7 +7,7 @@ gen_mem.py -- генерує таблиці для RTL ($readmemh) і для C-�
     vivado/sources/mem/fft_sin257.mem     sin(2*pi*k/1024), k = 0..256 (як dsp_sin_q15)
     vivado/sources/mem/fft_hann256.mem    вікно Ханна для FFT-256: dsp_hann_q15[4n+2]
     vivado/sources/mem/gen_gauss.mem      GFSK-імпульс для iq_gen: 3 x 256, Q15
-    vitis/src/dsp/dsp_tables.c            таблиці для DSP у MicroBlaze:
+    tools/host_sim/model/dsp/dsp_tables.c таблиці для C-моделі DSP (host_sim):
                                           синус 1024/4+1 точок, вікно Ханна 1024
 
 Запускати з каталогу tools/:  python gen_mem.py
@@ -17,7 +17,7 @@ import os
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 MEM_DIR = os.path.join(ROOT, "vivado", "sources", "mem")
-SRC_DIR = os.path.join(ROOT, "vitis", "src", "dsp")
+SRC_DIR = os.path.join(ROOT, "tools", "host_sim", "model", "dsp")
 
 NCO_N = 1024
 FFT_N = 1024

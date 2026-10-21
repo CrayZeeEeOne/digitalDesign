@@ -92,12 +92,14 @@ Firmware layout (`vitis/src`, dependencies only point down the list):
 | Folder | What lives there |
 |---|---|
 | `main.c`, `config.h` | init + main loop; all system parameters (Fs, frequencies, capture length) |
-| `app/` | `viewer` (screens), `keys` (short press / hold), `zoom`, `capture` (the recording), `view_time` (raw, bits), `view_freq` (FFT, waterfall) |
-| `source/` | `iq_source.h` interface; `src_synth` test signal (SD replay goes here next) |
-| `dsp/` | demodulator chain `nco_mixer -> decimator -> discriminator -> burst_detect -> bit_decoder`, FFT, spectrum; no TFT, builds on a PC |
+| `app/` | `viewer` (screens), `keys` (short press / hold), `zoom`, `capture.h` (the recording, filled by the PL), `view_time` (raw, bits), `view_freq` (FFT, waterfall), SD test / format |
 | `gfx/` | ST7789 driver `tft`, font, `plot` primitives |
-| `hal/` | drivers of the PL blocks: `spi_tft`, `system_ctrl` |
+| `hal/` | drivers of the PL blocks: `spi_tft`, `system_ctrl`, `dsp_rtl` (the whole DSP, see `docs/dsp_rtl.md`), `axi_qspi` + `sd_card` |
+| `lib/fatfs/` | FatFs R0.15a + diskio for the microSD card |
 | `../bsp/` | `crt0.S`, linker script, `xparameters.h` with BD addresses |
+
+The DSP itself runs in the PL (`vivado/sources/rtl/dsp_*.sv`). Its C model -- the
+same chain in software, for the host simulator only -- is in `tools/host_sim/model/`.
 
 All screens can be rendered on a PC, without the board:
 `tools/host_sim/run_host_sim.bat` (compares with `tools/host_sim/golden.md5`).
