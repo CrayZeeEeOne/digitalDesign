@@ -7,7 +7,8 @@ REM files; without it the split code does not fit next to the stack.
 REM
 REM Bare-metal, no Vitis platform/BSP: startup code, linker script and the few
 REM Xilinx headers the drivers need live in vitis\bsp\. Sources: vitis\src\main.c
-REM plus every .c in the layer folders (hal, gfx, dsp, source, app, lib\fatfs). Output:
+REM plus every .c in the layer folders (hal, gfx, app, lib\fatfs). dsp\ and source\
+REM are the C model for tools\host_sim only: on the board the DSP runs in the PL. Output:
 REM   vitis\elf\df5_app.elf   (loaded by run_board.tcl)
 REM
 REM mb-gcc is looked up in %XILINX_VITIS%, then in PATH.
@@ -32,7 +33,7 @@ if not defined MB_GCC (
 )
 
 set FILES="%SRC%\main.c"
-for %%D in (hal gfx dsp source app lib\fatfs) do (
+for %%D in (hal gfx app lib\fatfs) do (
     for %%F in ("%SRC%\%%D\*.c") do set FILES=!FILES! "%%F"
 )
 

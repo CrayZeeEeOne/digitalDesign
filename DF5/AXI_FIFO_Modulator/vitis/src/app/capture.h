@@ -1,14 +1,16 @@
 /*
- * capture.h -- one fixed recording for the static screens.
+ * capture.h -- one fixed recording for the static screens (the data only).
  *
- * After CFG_WARMUP_SAMPLES the capture waits for the end of a packet, so the
- * next CFG_CAPTURE_SAMPLES samples hold two whole packets with gaps around them.
- * It keeps:
+ * On the board the RTL fills it (dsp_top: dsp_capture + dsp_spectrum, read out
+ * by hal/dsp_rtl.c); on the PC the C model dsp/capture_model.c computes the same
+ * thing from software I/Q. The capture starts in a gap (right after a packet
+ * ends) and covers CFG_CAPTURE_SAMPLES input samples:
  *   raw[]    min/max of input I and Q in CAP_RAW_COLS columns, in steps of
  *            2^CAP_RAW_SHIFT (int8, saturated); raw samples are not kept
- *   pkt[]    bits decoded from up to CAP_PKTS packets
+ *   pkt[]    slicer decisions of up to CAP_PKTS packets, from the burst start
+ *   dec[]    the same packets decoded by the demodulator (after sync, with CRC)
  *   fft[]    spectrum of the capture: max hold over the waterfall rows (spec_log levels)
- *   wf[][]   waterfall: CAP_WF_ROWS spectra, one per CFG_CAPTURE_SAMPLES / CAP_WF_ROWS
+ *   wf[][]   waterfall: CAP_WF_ROWS spectra, row 0 = start of the capture
  * Nothing here draws.
  */
 #ifndef CAPTURE_H
@@ -16,13 +18,12 @@
 
 #include <stdint.h>
 #include "config.h"
-#include "dsp/demod_chain.h"
-#include "dsp/spectrum.h"
 
 #define CAP_RAW_COLS  384
 #define CAP_WF_ROWS   40
 #define CAP_PKTS      2
-#define CAP_PKT_BITS  256
+#define CAP_PKT_BITS  512
+#define CAP_DEC_BYTES 64
 #define CAP_RAW_SHIFT 6        /* raw[] step: 64 ADC units, range +-8128 */
 
 typedef struct {
@@ -37,45 +38,32 @@ typedef struct {
 } cap_pkt_t;
 
 typedef struct {
-    uint8_t state;
-    uint32_t count;            /* samples in the warm-up / trigger wait */
-    uint32_t pos;              /* samples recorded */
+    uint8_t valid;             /* the demodulator found the sync word */
+    uint8_t crc_ok;
+    uint8_t nbytes;            /* bytes after sync, CRC included */
+    uint8_t bytes[CAP_DEC_BYTES];
+} cap_dec_t;
 
+typedef struct {
     cap_raw_t raw[CAP_RAW_COLS];
-    uint16_t raw_idx;
-    uint32_t raw_edge;         /* first sample of the next column */
-
     cap_pkt_t pkt[CAP_PKTS];
-    uint8_t npkt;              /* packets finished */
-    uint8_t in_pkt;            /* pkt[npkt] is being recorded */
-
-    uint8_t blk_rec;           /* the current block has recorded samples */
-    uint16_t wf_blocks;
-    uint8_t wf_row;
-    uint32_t wf_acc[SPEC_BINS];
+    uint8_t npkt;              /* packets recorded */
+    cap_dec_t dec[CAP_PKTS];
+    uint8_t ndec;              /* packets decoded */
     uint8_t fft[SPEC_BINS];
     uint8_t wf[CAP_WF_ROWS][SPEC_BINS];
-    int16_t fft_re[SPEC_FFT_N], fft_im[SPEC_FFT_N];
-    uint16_t mag[SPEC_BINS];
-} capture_t;
-
-void capture_init(capture_t *c);
-
-/* After the demodulator processed one input sample. */
-void capture_sample(capture_t *c, const demod_sample_t *s);
-
-/* After a whole block of samples (spectrum of the block). */
-void capture_block(capture_t *c, const int16_t *iq, uint32_t n_samples);
-
-int capture_done(const capture_t *c);
-
-/* 0..total progress for a progress bar. */
-uint32_t capture_progress(const capture_t *c, uint32_t total);
+} cap_data_t;
 
 /* Bit k of a packet (0/1). */
 static inline uint8_t cap_pkt_bit(const cap_pkt_t *p, uint16_t k)
 {
     return (uint8_t)((p->bits[k >> 3] >> (7u - (k & 7u))) & 1u);
+}
+
+/* Level in 0.1 dBFS for a spectrum level (~16*log2: 20*log10(2)/16 dB per step). */
+static inline int16_t cap_level_ddb(uint8_t l)
+{
+    return (int16_t)(((int32_t)l - SPEC_LOG_0DBFS) * 241 / 64);
 }
 
 #endif

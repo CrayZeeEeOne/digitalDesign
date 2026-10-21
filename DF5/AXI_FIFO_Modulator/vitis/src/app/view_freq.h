@@ -14,7 +14,7 @@
 
 #define VIEW_FREQ_POINTS SPEC_BINS
 
-void view_fft(tft_t *tft, const capture_t *c, const zoom_t *z);
-void view_waterfall(tft_t *tft, const capture_t *c, const zoom_t *z);
+void view_fft(tft_t *tft, const cap_data_t *c, const zoom_t *z);
+void view_waterfall(tft_t *tft, const cap_data_t *c, const zoom_t *z);
 
 #endif

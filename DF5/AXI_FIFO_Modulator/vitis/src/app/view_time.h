@@ -11,7 +11,7 @@
 
 #define VIEW_TIME_POINTS CAP_RAW_COLS
 
-void view_raw(tft_t *tft, const capture_t *c, const zoom_t *z);
-void view_bits(tft_t *tft, const capture_t *c, const zoom_t *z);
+void view_raw(tft_t *tft, const cap_data_t *c, const zoom_t *z);
+void view_bits(tft_t *tft, const cap_data_t *c, const zoom_t *z);
 
 #endif

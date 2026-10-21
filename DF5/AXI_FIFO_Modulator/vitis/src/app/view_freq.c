@@ -14,7 +14,7 @@ static uint16_t wf_color(uint8_t v)
 }
 
 /* Color scale of the waterfall: from just above the mean level (noise) to the peak. */
-static void wf_range(const capture_t *c, uint8_t *lo, uint8_t *hi)
+static void wf_range(const cap_data_t *c, uint8_t *lo, uint8_t *hi)
 {
     uint32_t sum = 0u;
     uint16_t r, b;
@@ -66,7 +66,7 @@ static void freq_axis(tft_t *tft, uint16_t x0, uint16_t w, uint16_t y, const zoo
 }
 
 /* Waterfall rows [0, CAP_WF_ROWS) into the rectangle, visible bins only. */
-static void draw_waterfall(tft_t *tft, const capture_t *c, const zoom_t *z,
+static void draw_waterfall(tft_t *tft, const cap_data_t *c, const zoom_t *z,
                            uint16_t x0, uint16_t y0, uint16_t w, uint16_t h)
 {
     uint16_t span = zoom_span(z, VIEW_FREQ_POINTS);
@@ -93,14 +93,14 @@ static void draw_waterfall(tft_t *tft, const capture_t *c, const zoom_t *z,
 /* y of a spec_log level on the dB grid (0 dBFS at the top, -100 at the bottom). */
 static int16_t level_y(int32_t l, uint16_t y0, uint16_t h)
 {
-    int32_t ddb = ((l - SPEC_LOG_0DBFS) * 241) / 64;     /* 0.1 dB, see spec_log_to_ddb() */
+    int32_t ddb = ((l - SPEC_LOG_0DBFS) * 241) / 64;     /* 0.1 dB, see cap_level_ddb() */
 
     if (ddb > 0) ddb = 0;
     if (ddb < -DB_DIVS * 100) ddb = -DB_DIVS * 100;
     return (int16_t)(y0 + ((-ddb) * (int32_t)(h - 1u)) / (DB_DIVS * 100));
 }
 
-void view_fft(tft_t *tft, const capture_t *c, const zoom_t *z)
+void view_fft(tft_t *tft, const cap_data_t *c, const zoom_t *z)
 {
     uint16_t x0 = 6u, y0 = 28u;
     uint16_t w = (uint16_t)(tft->w - 12u - 26u);      /* 26 px for the dB labels */
@@ -148,7 +148,7 @@ void view_fft(tft_t *tft, const capture_t *c, const zoom_t *z)
     khz_label(p, bin_khz(z->off + peak));
     while (*p) p++;
     *p++ = ' ';
-    ddb = spec_log_to_ddb(c->fft[z->off + peak]);
+    ddb = cap_level_ddb(c->fft[z->off + peak]);
     if (ddb < 0) { *p++ = '-'; ddb = (int16_t)-ddb; }
     p = plot_u32_to_str(p, (uint32_t)ddb / 10u);
     *p++ = '.';
@@ -160,7 +160,7 @@ void view_fft(tft_t *tft, const capture_t *c, const zoom_t *z)
     freq_axis(tft, x0, w, (uint16_t)(y0 + h + 2u), z);
 }
 
-void view_waterfall(tft_t *tft, const capture_t *c, const zoom_t *z)
+void view_waterfall(tft_t *tft, const cap_data_t *c, const zoom_t *z)
 {
     plot_box_t b = plot_area(tft);
     char buf[12];

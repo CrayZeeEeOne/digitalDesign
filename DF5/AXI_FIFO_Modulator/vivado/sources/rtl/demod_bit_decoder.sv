@@ -55,6 +55,10 @@ module demod_bit_decoder (
   output logic signed [15:0] st_favg,
   output logic [15:0]        st_dev,
 
+  // рішення слайсера на кожному бітовому такті в пакеті (для захоплення)
+  output logic               tap_bit_v,
+  output logic               tap_bit,
+
   // результат (однотактовий строб, поля дійсні в тому ж такті)
   output logic               res_strobe,
   output logic [1:0]         res_kind,       // 0 пакет, 1 пакет без sync, 2 обірваний
@@ -100,7 +104,10 @@ module demod_bit_decoder (
   assign trans   = bit_now != bit_prev;
 
   assign ph_err  = bit_phase - 16'h8000;
-  assign ph_corr = trans ? (bit_phase - 16'(ph_err >>> 2)) : bit_phase;
+  // Знакові зсуви -- окремими сигналами: у виразі з беззнаковим bit_phase
+  // `>>>` став би логічним, і корекція при від'ємній помилці була б хибною.
+  wire signed [15:0] ph_adj = ph_err >>> 2;
+  assign ph_corr = trans ? (bit_phase - ph_adj) : bit_phase;
   assign ph_sum  = {1'b0, ph_corr} + {1'b0, cfg_bit_inc};
   assign wrap    = ph_sum[16];
 
@@ -121,7 +128,8 @@ module demod_bit_decoder (
   wire signed [16:0] err_s   = 17'(in_dphi) - 17'(favg16);
   wire        [16:0] err_abs = err_s[16] ? -err_s : err_s;
   wire signed [25:0] dev_d   = 26'($signed({1'b0, err_abs, 8'd0})) - 26'($signed({2'b0, dev}));
-  wire        [23:0] dev_nx  = dev + 24'(dev_d >>> cfg_dev_shift);
+  wire signed [25:0] dev_stp = dev_d >>> cfg_dev_shift;
+  wire        [23:0] dev_nx  = dev + 24'(dev_stp);
 
   wire sync_hit   = (h16 == cfg_sync_word);
   wire sync_inv   = (h16 == ~cfg_sync_word);
@@ -140,6 +148,9 @@ module demod_bit_decoder (
     res_win_cnt        = win_cnt_snap;
     res_win_fsum       = win_fsum_snap;
   end
+
+  assign tap_bit_v     = in_valid && in_burst && !in_burst_start && !in_burst_end && wrap;
+  assign tap_bit       = bit_now;
 
   assign st_synced     = synced;
   assign st_pkt_active = pkt_active;

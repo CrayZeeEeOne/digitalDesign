@@ -10,6 +10,8 @@
 //   wr_data / wr_strb
 //   rd_en   -- одиночний імпульс: rd_data має бути комбінаційно виставлено
 //              за rd_addr у ТОМУ Ж такті (защіпується в s_axi_rdata)
+//   rd_req / rd_req_addr -- на такт раніше (AR прийнято): для синхронних
+//              BRAM, які видають дані з затримкою в один такт
 //
 // Усі відповіді OKAY; адреса поза мапою -- справа користувача (читати 0).
 //==============================================================================
@@ -46,7 +48,9 @@ module axi_lite_regs #(
   output logic [3:0]            wr_strb,
   output logic                  rd_en,
   output logic [ADDR_WIDTH-1:0] rd_addr,
-  input  logic [31:0]           rd_data
+  input  logic [31:0]           rd_data,
+  output logic                  rd_req,
+  output logic [ADDR_WIDTH-1:0] rd_req_addr
 );
 
   //-------------------------------------------------------------- запис ----
@@ -109,6 +113,8 @@ module axi_lite_regs #(
 
   assign s_axi_arready = !rd_pending && !s_axi_rvalid;
   assign rd_en         = rd_pending;
+  assign rd_req        = ar_hs;
+  assign rd_req_addr   = {s_axi_araddr[ADDR_WIDTH-1:2], 2'b00};
 
   always_ff @(posedge s_axi_aclk) begin
     if (!s_axi_aresetn) begin

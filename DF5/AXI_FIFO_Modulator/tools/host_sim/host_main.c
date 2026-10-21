@@ -1,8 +1,10 @@
 /*
  * host_main.c -- run the firmware's viewer on a PC and save the screens.
  *
- * Same code as on the board (vitis/src: source, dsp, app, gfx), with the SPI
- * driver replaced by st7789_emu.c. Saves every screen at zoom x1 and x4 (bits
+ * Same screens as on the board (vitis/src: app, gfx), with the SPI driver
+ * replaced by st7789_emu.c. On the board the PL records the capture; here the C
+ * model (source/src_synth -> dsp/capture_model) does, so the screens show the
+ * synthetic 2-FSK signal at -250 kHz instead of the RTL generator. Saves every screen at zoom x1 and x4 (bits
  * and FFT also at x16) as out/viewN_xZ.ppm, and checks the decoded bits against the
  * bits the test source actually sent.
  *
@@ -13,6 +15,7 @@
 #include "config.h"
 #include "gfx/tft.h"
 #include "source/src_synth.h"
+#include "dsp/capture_model.h"
 #include "app/viewer.h"
 #include "app/sd_test.h"
 #include "st7789_emu.h"
@@ -20,6 +23,7 @@
 static spi_tft_t spi;
 static tft_t tft;
 static src_synth_t synth;
+static capture_model_t model;
 static viewer_t viewer;
 static int16_t iq[CFG_IQ_BLOCK * 2u];
 
@@ -97,21 +101,26 @@ int main(int argc, char **argv)
     tft_init(&tft, &spi, TFT_ROT_90);
     src_synth_init(&synth);
     viewer_init(&viewer);
+    /* NCO: the synthetic carrier (SRC_CARRIER_INC, 16-bit phase) back to 0 Hz;
+       bit clock: 2^16 * bitrate / (Fs / 16) */
+    capture_model_init(&model, (uint16_t)(-SRC_CARRIER_INC),
+                       (uint16_t)(((uint64_t)CFG_BITRATE * 65536u * 16u + CFG_SAMPLE_RATE_HZ / 2u) / CFG_SAMPLE_RATE_HZ));
 
-    while (!viewer_done(&viewer)) {
+    while (!capture_model_done(&model)) {
         iq_source_read(&synth.base, iq, CFG_IQ_BLOCK);
-        viewer_process_block(&viewer, iq, CFG_IQ_BLOCK);
+        capture_model_block(&model, iq, CFG_IQ_BLOCK);
         blocks++;
     }
+    viewer_set_capture(&viewer, &model.d);
     /* SD CARD screen: the card as the stub bus sees it (no card) */
     axi_qspi_init(&sd_spi, 0u);
     sd_test_run(&sd_info, &sd, &sd_spi, host_ticks, 1000000u);
     viewer.sd = &sd_info;
 
     printf("capture: %d blocks, %u packets, panel %ux%u\n",
-           blocks, (unsigned)viewer.cap.npkt, tft.w, tft.h);
-    for (m = 0; m < viewer.cap.npkt; m++) {
-        const cap_pkt_t *p = &viewer.cap.pkt[m];
+           blocks, (unsigned)model.d.npkt, tft.w, tft.h);
+    for (m = 0; m < model.d.npkt; m++) {
+        const cap_pkt_t *p = &model.d.pkt[m];
         printf("packet %d: samples %u..%u\n", m + 1, (unsigned)p->start, (unsigned)p->end);
         errors += check_bits(p, m);
     }

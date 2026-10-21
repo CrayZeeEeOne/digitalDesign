@@ -40,11 +40,13 @@ module demod_cordic_atan2 #(
   logic signed [IW-1:0] y   [0:ITER];
   logic signed [15:0]   z   [0:ITER];
   logic [AUX_W-1:0]     aux [0:ITER];
+  logic                 zero[0:ITER];          // нульовий вектор: кут 0, як у моделі
 
   //------------------------------------------- стадія 0: у праву півплощину
   always_ff @(posedge clk) begin
-    v[0]   <= in_valid && !rst;
-    aux[0] <= in_aux;
+    v[0]    <= in_valid && !rst;
+    aux[0]  <= in_aux;
+    zero[0] <= (in_x == 0) && (in_y == 0);
     if (in_x < 0) begin
       x[0] <= -IW'(in_x);
       y[0] <= -IW'(in_y);
@@ -62,8 +64,9 @@ module demod_cordic_atan2 #(
   generate
     for (i = 0; i < ITER; i++) begin : g_it
       always_ff @(posedge clk) begin
-        v[i+1]   <= v[i];
-        aux[i+1] <= aux[i];
+        v[i+1]    <= v[i] && !rst;
+        aux[i+1]  <= aux[i];
+        zero[i+1] <= zero[i];
         if (y[i] >= 0) begin
           x[i+1] <= x[i] + (y[i] >>> i);
           y[i+1] <= y[i] - (x[i] >>> i);
@@ -79,7 +82,7 @@ module demod_cordic_atan2 #(
   endgenerate
 
   assign out_valid = v[ITER];
-  assign out_angle = z[ITER];
+  assign out_angle = zero[ITER] ? 16'sd0 : z[ITER];
   assign out_aux   = aux[ITER];
 
 endmodule

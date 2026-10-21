@@ -67,3 +67,6 @@ vitis/src/board_boot.c
 
 # Host simulator output (tools/host_sim/run_host_sim.bat)
 tools/host_sim/out/
+
+# standalone xsim runs (scripts/sim_tb.bat)
+vivado/xsim_*/

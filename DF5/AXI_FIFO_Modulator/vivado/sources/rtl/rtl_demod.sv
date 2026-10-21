@@ -72,6 +72,14 @@ module rtl_demod #(
   output logic [15:0]        res_win_cnt,
   output logic signed [31:0] res_win_fsum,
 
+  // відводи для захоплення (dsp_capture): децимований потік після детектора
+  output logic               tap_v,          // децимований відлік
+  output logic               tap_burst,
+  output logic               tap_start,
+  output logic               tap_end,
+  output logic               tap_bit_v,      // бітове рішення в пакеті
+  output logic               tap_bit,
+
   // пам'ять пакета
   output logic               pkt_we,
   output logic [7:0]         pkt_waddr,
@@ -164,6 +172,10 @@ module rtl_demod #(
   );
 
   assign st_burst       = pw_burst;
+  assign tap_v          = pw_v;
+  assign tap_burst      = pw_burst;
+  assign tap_start      = pw_start;
+  assign tap_end        = pw_end;
   assign ev_burst_start = pw_v && pw_start;
 
   //--------------------------------------------------------- біти ---------
@@ -186,6 +198,8 @@ module rtl_demod #(
     .in_burst_start  (pw_start),
     .in_burst_end    (pw_end),
     .in_burst_len    (m_burst_len),
+    .tap_bit_v       (tap_bit_v),
+    .tap_bit         (tap_bit),
     .pkt_we          (pkt_we),
     .pkt_waddr       (pkt_waddr),
     .pkt_wdata       (pkt_wdata),

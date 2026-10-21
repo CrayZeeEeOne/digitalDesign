@@ -10,10 +10,7 @@
 #define SPECTRUM_H
 
 #include <stdint.h>
-
-#define SPEC_FFT_N      256
-#define SPEC_BINS       128
-#define SPEC_LOG_0DBFS  224        /* 16*log2(16384): full-scale tone after window and FFT */
+#include "config.h"            /* SPEC_FFT_N, SPEC_BINS, SPEC_LOG_0DBFS */
 
 /*
  * iq:  at least SPEC_FFT_N interleaved I/Q samples (the first SPEC_FFT_N are used).

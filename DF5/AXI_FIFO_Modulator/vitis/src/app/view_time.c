@@ -51,7 +51,7 @@ static void time_axis(tft_t *tft, const plot_box_t *b, const zoom_t *z)
 }
 
 /* Dotted line and "P1"/"P2" at the start of each packet. */
-static void packet_marks(tft_t *tft, const plot_box_t *b, const capture_t *c, const zoom_t *z)
+static void packet_marks(tft_t *tft, const plot_box_t *b, const cap_data_t *c, const zoom_t *z)
 {
     uint8_t p;
 
@@ -76,7 +76,7 @@ static void raw_lane(tft_t *tft, const plot_box_t *b, const plot_series_t *s, in
     tft_draw_text(tft, (uint16_t)(b->x0 + 3u), (uint16_t)(b->y0 + b->h - 10u), name, color, TFT_BLACK, 1);
 }
 
-void view_raw(tft_t *tft, const capture_t *c, const zoom_t *z)
+void view_raw(tft_t *tft, const cap_data_t *c, const zoom_t *z)
 {
     plot_box_t b = plot_area(tft);
     plot_box_t bi = b, bq = b;
@@ -102,7 +102,7 @@ void view_raw(tft_t *tft, const capture_t *c, const zoom_t *z)
 }
 
 /* Value of the decoded bit stream at capture sample s: 0/1, or -1 outside packets. */
-static int8_t bit_at(const capture_t *c, uint32_t s)
+static int8_t bit_at(const cap_data_t *c, uint32_t s)
 {
     uint8_t p;
 
@@ -120,7 +120,7 @@ static int8_t bit_at(const capture_t *c, uint32_t s)
 
 static char hex_digit(uint8_t v) { return (char)(v < 10u ? '0' + (int)v : 'A' + (int)v - 10); }
 
-void view_bits(tft_t *tft, const capture_t *c, const zoom_t *z)
+void view_bits(tft_t *tft, const cap_data_t *c, const zoom_t *z)
 {
     plot_box_t b = plot_area(tft);
     plot_box_t wave = b;
@@ -150,27 +150,44 @@ void view_bits(tft_t *tft, const capture_t *c, const zoom_t *z)
     packet_marks(tft, &wave, c, z);
     time_axis(tft, &wave, z);
 
-    /* Packets as text: bit count, then the bytes in hex (first bit = MSB). */
+    /*
+     * Packets as text: bit count; decoded by the demodulator (sync found): CRC
+     * status, the start of the bytes as text and the bytes in hex; otherwise the
+     * raw slicer bits in hex (first bit = MSB).
+     */
     y = (uint16_t)(wave.y0 + wave.h + 16u);
     for (p = 0u; p < c->npkt; p++) {
         const cap_pkt_t *k = &c->pkt[p];
+        const cap_dec_t *d = (p < c->ndec) ? &c->dec[p] : 0;
+        const uint8_t *bytes = d ? d->bytes : k->bits;
         char line[56];
         char *q = line;
-        uint16_t nbytes = (uint16_t)(k->nbits / 8u), i;
+        uint16_t nbytes = d ? d->nbytes : (uint16_t)(k->nbits / 8u), i;
 
         *q++ = 'P'; *q++ = (char)('1' + p); *q++ = ':'; *q++ = ' ';
         q = plot_u32_to_str(q, k->nbits);
         *q++ = ' '; *q++ = 'B'; *q++ = 'I'; *q++ = 'T'; *q++ = 'S'; *q = '\0';
         tft_draw_text(tft, b.x0, y, line, TFT_WHITE, TFT_BLACK, 1);
+        if (d) {
+            tft_draw_text(tft, (uint16_t)(b.x0 + 84u), y, d->crc_ok ? "CRC OK" : "CRC ERROR",
+                          d->crc_ok ? TFT_GREEN : TFT_RED, TFT_BLACK, 1);
+            q = line;
+            *q++ = '"';
+            for (i = 0u; i < 10u && i < nbytes; i++)
+                *q++ = (bytes[i] >= 0x20u && bytes[i] < 0x60u) ? (char)bytes[i] : '.';
+            *q++ = '"'; *q = '\0';
+            tft_draw_text(tft, (uint16_t)(b.x0 + 150u), y, line, TFT_YELLOW, TFT_BLACK, 1);
+        }
+        else tft_draw_text(tft, (uint16_t)(b.x0 + 84u), y, "NO SYNC", TFT_GRAY, TFT_BLACK, 1);
 
         if (nbytes > 25u) nbytes = 25u;
         q = line;
         for (i = 0u; i < nbytes; i++) {
-            *q++ = hex_digit((uint8_t)(k->bits[i] >> 4));
-            *q++ = hex_digit((uint8_t)(k->bits[i] & 15u));
+            *q++ = hex_digit((uint8_t)(bytes[i] >> 4));
+            *q++ = hex_digit((uint8_t)(bytes[i] & 15u));
         }
         *q = '\0';
-        tft_draw_text(tft, b.x0, (uint16_t)(y + 10u), line, TFT_GREEN, TFT_BLACK, 1);
+        tft_draw_text(tft, b.x0, (uint16_t)(y + 10u), line, d ? TFT_GREEN : TFT_GRAY, TFT_BLACK, 1);
         y = (uint16_t)(y + 28u);
     }
     if (c->npkt == 0u)

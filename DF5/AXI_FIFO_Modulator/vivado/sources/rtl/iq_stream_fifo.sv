@@ -34,7 +34,9 @@ module iq_stream_fifo #(
 
   wire [PW:0] mem_count = wr_ptr - rd_ptr;
   wire        mem_empty = (mem_count == '0);
-  assign      full      = (mem_count == (PW+1)'(DEPTH));
+  // повний -- за загальним рівнем (пам'ять + вихідний регістр), тож місткість
+  // рівно DEPTH слів, як і рахують PUSHED/DROPPED
+  assign      full      = (level >= (PW+1)'(DEPTH));
 
   wire do_write = wr_en && !full;
   // вихідний регістр вільний або саме звільняється -> витягуємо наступне слово

@@ -119,7 +119,7 @@ module tb_rtl_demod;
     c_valid_in <= 1'b1;
     @(posedge aclk);
     c_valid_in <= 1'b0;
-    do @(posedge aclk); while (!c_valid_out);
+    do @(negedge aclk); while (!c_valid_out);
     got     = c_ang;
     exp_q15 = $rtoi(ang_rad / 3.14159265358979 * 32768.0);
     err = got - exp_q15;
@@ -143,18 +143,18 @@ module tb_rtl_demod;
   int first_mismatch_reported = 0;
 
   always @(posedge aclk) begin
-    if (arstn && dut.u_core.pw_v && trace_fd != 0) begin
+    if (arstn && dut.u_bank.u_core.pw_v && trace_fd != 0) begin
       if ($fscanf(trace_fd, "%d %d %d %d %d\n", tr_i, tr_q, tr_dphi, tr_pavg, tr_burst) == 5) begin
         trace_n++;
-        if (dut.u_core.pw_dphi !== 16'(tr_dphi) ||
-            dut.u_core.st_pavg !== 32'(tr_pavg) ||
-            dut.u_core.pw_burst !== tr_burst[0]) begin
+        if (dut.u_bank.u_core.pw_dphi !== 16'(tr_dphi) ||
+            dut.u_bank.u_core.st_pavg !== 32'(tr_pavg) ||
+            dut.u_bank.u_core.pw_burst !== tr_burst[0]) begin
           trace_mismatch++;
           if (first_mismatch_reported < 5) begin
             first_mismatch_reported++;
             $display("[TRACE] розбіжність @dec %0d: dphi %0d/%0d  pavg %0d/%0d  burst %0d/%0d",
-                     trace_n, $signed(dut.u_core.pw_dphi), tr_dphi,
-                     dut.u_core.st_pavg, tr_pavg, dut.u_core.pw_burst, tr_burst);
+                     trace_n, $signed(dut.u_bank.u_core.pw_dphi), tr_dphi,
+                     dut.u_bank.u_core.st_pavg, tr_pavg, dut.u_bank.u_core.pw_burst, tr_burst);
           end
         end
       end
@@ -198,7 +198,7 @@ module tb_rtl_demod;
     $display("\n[RESULT] kind=%0d burst=%0b preamble=%0b sync=%0b crc_ok=%0b inv=%0b trunc=%0b pkts=%0d bits=%0d",
              kind_i, flags[0], flags[1], flags[2], flags[3], flags[4], flags[5], pkts, bits);
     $display("         burst_len=%0d pwr=%0d peak=%0d noise=%0d", r_len, r_pwr, r_peak, r_noise);
-    $display("         f_residual=%+.1f Hz (slicer %+.1f)  dev=%.0f Hz  bitrate=%.0f (%0d біт)  SNR=%.1f dB",
+    $display("         f_residual=%.1f Hz (slicer %.1f)  dev=%.0f Hz  bitrate=%.0f (%0d біт)  SNR=%.1f dB",
              f_res, f_sl, devhz, br, trans, snr);
     if (kind_i == 0) begin
       hex = "";
@@ -207,8 +207,10 @@ module tb_rtl_demod;
         axi_read(9'h100 + 9'(i), w);
         for (int b = 0; b < 4 && i + b < r_bytes; b++) begin
           hex = {hex, $sformatf("%02x", w[8*b +: 8])};
-          if (i + b < 12) ascii = {ascii, (w[8*b +: 8] >= 8'h20 && w[8*b +: 8] < 8'h7F) ?
-                                           string'(w[8*b +: 8]) : "."};
+          if (i + b < 12) begin
+            if (w[8*b +: 8] >= 8'h20 && w[8*b +: 8] < 8'h7F) ascii = {ascii, $sformatf("%c", w[8*b +: 8])};
+            else                                            ascii = {ascii, "."};
+          end
         end
       end
       $display("         payload[%0d]: %s... '%s'", r_bytes, hex.substr(0, 31), ascii);
@@ -379,7 +381,7 @@ module tb_rtl_demod;
   end
 
   initial begin
-    #(CLK_P * 3_000_000);
+    #(CLK_P * 30_000_000);
     $error("Watchdog: тест завис");
     $finish;
   end

@@ -5,17 +5,6 @@
 #include "app/view_freq.h"
 #include "app/view_sd.h"
 
-/*
- * NCO step that moves the channel to 0 Hz: (center - channel) / Fs * 2^16, rounded.
- * 64-bit math: 250 kHz * 2^16 does not fit in 32 bits.
- */
-#define NCO_OFFSET_HZ ((int64_t)CFG_CENTER_FREQ_HZ - (int64_t)CFG_CHANNEL_FREQ_HZ)
-#define NCO_INC ((uint16_t)((NCO_OFFSET_HZ * 65536 + (NCO_OFFSET_HZ >= 0 ? 1 : -1) * (int64_t)(CFG_SAMPLE_RATE_HZ / 2)) \
-                            / (int64_t)CFG_SAMPLE_RATE_HZ))
-
-/* Bit clock step at the decimated rate: 2^16 * bitrate / (Fs / DECIM_R), rounded. */
-#define BIT_INC ((uint16_t)(((uint64_t)CFG_BITRATE * 65536u * DECIM_R + CFG_SAMPLE_RATE_HZ / 2u) / CFG_SAMPLE_RATE_HZ))
-
 static const char *const view_names[VIEW_COUNT] = { "RAW I/Q", "BITS", "FFT", "WATERFALL", "SD CARD" };
 
 /* Number of points the zoom window of each screen moves over. */
@@ -32,8 +21,9 @@ void viewer_init(viewer_t *v)
     v->mode = VIEW_RAW;
     v->sd = 0;
     v->sd_fmt = 0;
-    demod_chain_init(&v->chain, NCO_INC, BIT_INC);
-    capture_init(&v->cap);
+    v->cap = 0;
+    v->prog_done = 0u;
+    v->prog_total = 1u;
 }
 
 void viewer_set_mode(viewer_t *v, view_mode_t mode)
@@ -64,24 +54,15 @@ int viewer_key(viewer_t *v, key_action_t a)
     }
 }
 
-int viewer_done(const viewer_t *v)
+void viewer_set_capture(viewer_t *v, const cap_data_t *cap)
 {
-    return capture_done(&v->cap);
+    v->cap = cap;
 }
 
-void viewer_process_block(viewer_t *v, const int16_t *iq, uint32_t n_samples)
+void viewer_set_progress(viewer_t *v, uint32_t done, uint32_t total)
 {
-    uint32_t k;
-
-    if (capture_done(&v->cap)) return;
-
-    for (k = 0; k < n_samples; k++) {
-        demod_sample_t s;
-
-        demod_chain_step(&v->chain, iq[2u * k], iq[2u * k + 1u], &s);
-        capture_sample(&v->cap, &s);
-    }
-    capture_block(&v->cap, iq, n_samples);
+    v->prog_done = done;
+    v->prog_total = total ? total : 1u;
 }
 
 static void draw_frame(tft_t *tft, view_mode_t m, const zoom_t *z)
@@ -107,10 +88,11 @@ static void draw_frame(tft_t *tft, view_mode_t m, const zoom_t *z)
                   TFT_GRAY, TFT_BLACK, 1);
 }
 
-static void draw_capture_progress(tft_t *tft, const capture_t *c)
+static void draw_capture_progress(tft_t *tft, const viewer_t *v)
 {
     uint16_t bw = (uint16_t)(tft->w - 40u);
-    uint32_t done = capture_progress(c, bw - 4u);
+    uint32_t done = (v->prog_done >= v->prog_total) ? (uint32_t)(bw - 4u)
+                  : (v->prog_done / 64u) * (bw - 4u) / (v->prog_total / 64u + 1u);
 
     tft_clear(tft, TFT_BLACK);
     tft_draw_rect(tft, 0, 0, tft->w, tft->h, TFT_GREEN);
@@ -123,18 +105,18 @@ void viewer_draw(viewer_t *v, tft_t *tft)
 {
     const zoom_t *z = &v->zoom[v->mode];
 
-    if (!capture_done(&v->cap)) {
-        draw_capture_progress(tft, &v->cap);
+    if (!v->cap) {
+        draw_capture_progress(tft, v);
         return;
     }
 
     draw_frame(tft, v->mode, z);
 
     switch (v->mode) {
-    case VIEW_RAW:       view_raw(tft, &v->cap, z); break;
-    case VIEW_BITS:      view_bits(tft, &v->cap, z); break;
-    case VIEW_FFT:       view_fft(tft, &v->cap, z); break;
-    case VIEW_WATERFALL: view_waterfall(tft, &v->cap, z); break;
+    case VIEW_RAW:       view_raw(tft, v->cap, z); break;
+    case VIEW_BITS:      view_bits(tft, v->cap, z); break;
+    case VIEW_FFT:       view_fft(tft, v->cap, z); break;
+    case VIEW_WATERFALL: view_waterfall(tft, v->cap, z); break;
     case VIEW_SD:        view_sd(tft, v->sd, v->sd_fmt); break;
     default: break;
     }

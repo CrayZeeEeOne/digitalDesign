@@ -1,7 +1,7 @@
 /*
- * viewer.h -- the signal viewer application: runs the demodulator chain over
- * incoming I/Q, records one capture with two packets, and shows it as four
- * screens:
+ * viewer.h -- the signal viewer: shows one capture (app/capture.h) with two
+ * packets as screens. The capture comes from outside -- the RTL on the board
+ * (hal/dsp_rtl.h), the C model on the PC (dsp/capture_model.h):
  *   RAW I/Q    the input signal over time
  *   BITS       bits decoded from both packets (waveform + hex)
  *   FFT        level in dBFS vs frequency (max hold), peak marker
@@ -14,7 +14,6 @@
 
 #include <stdint.h>
 #include "gfx/tft.h"
-#include "dsp/demod_chain.h"
 #include "app/capture.h"
 #include "app/keys.h"
 #include "app/zoom.h"
@@ -33,8 +32,8 @@ typedef enum {
 typedef struct {
     view_mode_t mode;
     zoom_t zoom[VIEW_COUNT];
-    demod_chain_t chain;
-    capture_t cap;
+    const cap_data_t *cap;     /* NULL while recording */
+    uint32_t prog_done, prog_total;   /* recording progress */
     const sd_info_t *sd;       /* shown on the SD CARD screen, may be NULL */
     const sd_format_result_t *sd_fmt;
 } viewer_t;
@@ -47,12 +46,13 @@ void viewer_set_mode(viewer_t *v, view_mode_t mode);
    the screen has to be redrawn. */
 int viewer_key(viewer_t *v, key_action_t a);
 
-void viewer_process_block(viewer_t *v, const int16_t *iq, uint32_t n_samples);
+/* Show this capture (NULL: back to the progress bar). */
+void viewer_set_capture(viewer_t *v, const cap_data_t *cap);
 
-/* The capture is complete (the viewer needs no more input). */
-int viewer_done(const viewer_t *v);
+/* Recording progress while there is no capture: done of total. */
+void viewer_set_progress(viewer_t *v, uint32_t done, uint32_t total);
 
-/* Redraw the current screen (capture progress until the capture is done). */
+/* Redraw the current screen (capture progress until the capture is set). */
 void viewer_draw(viewer_t *v, tft_t *tft);
 
 #endif
