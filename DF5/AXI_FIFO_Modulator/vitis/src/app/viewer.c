@@ -3,6 +3,7 @@
 #include "gfx/plot.h"
 #include "app/view_time.h"
 #include "app/view_freq.h"
+#include "app/view_sd.h"
 
 /*
  * NCO step that moves the channel to 0 Hz: (center - channel) / Fs * 2^16, rounded.
@@ -15,7 +16,7 @@
 /* Bit clock step at the decimated rate: 2^16 * bitrate / (Fs / DECIM_R), rounded. */
 #define BIT_INC ((uint16_t)(((uint64_t)CFG_BITRATE * 65536u * DECIM_R + CFG_SAMPLE_RATE_HZ / 2u) / CFG_SAMPLE_RATE_HZ))
 
-static const char *const view_names[VIEW_COUNT] = { "RAW I/Q", "BITS", "FFT", "WATERFALL" };
+static const char *const view_names[VIEW_COUNT] = { "RAW I/Q", "BITS", "FFT", "WATERFALL", "SD CARD" };
 
 /* Number of points the zoom window of each screen moves over. */
 static uint16_t view_points(view_mode_t m)
@@ -29,6 +30,8 @@ void viewer_init(viewer_t *v)
 
     for (n = 0u; n < sizeof(v->zoom); n++) ((uint8_t *)v->zoom)[n] = 0u;
     v->mode = VIEW_RAW;
+    v->sd = 0;
+    v->sd_fmt = 0;
     demod_chain_init(&v->chain, NCO_INC, BIT_INC);
     capture_init(&v->cap);
 }
@@ -42,6 +45,8 @@ int viewer_key(viewer_t *v, key_action_t a)
 {
     zoom_t *z = &v->zoom[v->mode];
     uint16_t n = view_points(v->mode);
+
+    if (v->mode == VIEW_SD && a != KEY_NEXT) return 0;
 
     switch (a) {
     case KEY_NEXT:
@@ -98,7 +103,8 @@ static void draw_frame(tft_t *tft, view_mode_t m, const zoom_t *z)
     *p++ = '/';
     plot_u32_to_str(p, VIEW_COUNT);
     tft_draw_text(tft, (uint16_t)(tft->w - 6u - plot_text_w(buf)), 4, buf, TFT_YELLOW, TFT_BLACK, 1);
-    tft_draw_text(tft, (uint16_t)(tft->w - 6u - 72u), 15, "K1>  K2 ZOOM", TFT_GRAY, TFT_BLACK, 1);
+    tft_draw_text(tft, (uint16_t)(tft->w - 6u - 72u), 15, m == VIEW_SD ? "K1>  K2 RETRY" : "K1>  K2 ZOOM",
+                  TFT_GRAY, TFT_BLACK, 1);
 }
 
 static void draw_capture_progress(tft_t *tft, const capture_t *c)
@@ -129,6 +135,7 @@ void viewer_draw(viewer_t *v, tft_t *tft)
     case VIEW_BITS:      view_bits(tft, &v->cap, z); break;
     case VIEW_FFT:       view_fft(tft, &v->cap, z); break;
     case VIEW_WATERFALL: view_waterfall(tft, &v->cap, z); break;
+    case VIEW_SD:        view_sd(tft, v->sd, v->sd_fmt); break;
     default: break;
     }
 }

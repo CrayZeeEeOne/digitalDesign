@@ -6,7 +6,8 @@
  *   BITS       bits decoded from both packets (waveform + hex)
  *   FFT        level in dBFS vs frequency (max hold), peak marker
  *   WATERFALL  frequency vs time
- * Each screen keeps its own zoom (x1..x16) and position (app/keys.h for the keys).
+ *   SD CARD    result of the microSD test (app/sd_test.h)
+ * Each plot keeps its own zoom (x1..x16) and position (app/keys.h for the keys).
  */
 #ifndef VIEWER_H
 #define VIEWER_H
@@ -17,12 +18,15 @@
 #include "app/capture.h"
 #include "app/keys.h"
 #include "app/zoom.h"
+#include "app/sd_test.h"
+#include "app/sd_format.h"
 
 typedef enum {
     VIEW_RAW = 0,
     VIEW_BITS,
     VIEW_FFT,
     VIEW_WATERFALL,
+    VIEW_SD,
     VIEW_COUNT
 } view_mode_t;
 
@@ -31,13 +35,16 @@ typedef struct {
     zoom_t zoom[VIEW_COUNT];
     demod_chain_t chain;
     capture_t cap;
+    const sd_info_t *sd;       /* shown on the SD CARD screen, may be NULL */
+    const sd_format_result_t *sd_fmt;
 } viewer_t;
 
 void viewer_init(viewer_t *v);
 
 void viewer_set_mode(viewer_t *v, view_mode_t mode);
 
-/* Apply a key action. Returns 1 if the screen has to be redrawn. */
+/* Apply a key action (zoom/scroll do nothing on the SD CARD screen). Returns 1 if
+   the screen has to be redrawn. */
 int viewer_key(viewer_t *v, key_action_t a);
 
 void viewer_process_block(viewer_t *v, const int16_t *iq, uint32_t n_samples);

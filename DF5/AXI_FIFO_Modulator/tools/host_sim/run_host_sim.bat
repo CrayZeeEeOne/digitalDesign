@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================================
-REM run_host_sim.bat -- render all 12 viewer screens on the PC, without the board.
+REM run_host_sim.bat -- render all viewer screens on the PC, without the board.
 REM
 REM Builds the firmware's source/dsp/app/gfx code with a host gcc, replacing the
 REM SPI driver by an ST7789 emulator (st7789_emu.c), saves out\viewNN.ppm and
@@ -33,6 +33,7 @@ if not exist "%OUT%" mkdir "%OUT%"
     "%HERE%host_main.c" "%HERE%st7789_emu.c" ^
     "%SRC%\gfx\tft.c" "%SRC%\gfx\font5x7.c" "%SRC%\gfx\plot.c" ^
     "%SRC%\dsp\*.c" "%SRC%\source\*.c" "%SRC%\app\*.c" ^
+    "%SRC%\hal\sd_card.c" "%SRC%\lib\fatfs\*.c" "%HERE%axi_qspi_stub.c" ^
     -o "%OUT%\host_sim.exe"
 if errorlevel 1 exit /b %errorlevel%
 

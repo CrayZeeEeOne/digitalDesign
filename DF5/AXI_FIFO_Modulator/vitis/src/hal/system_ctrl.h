@@ -34,4 +34,10 @@ void system_ctrl_clear_press_events(const system_ctrl_t *sys, uint32_t mask);
 /* Free-running AXI clock counter (wraps every 2^32 cycles). */
 uint32_t system_ctrl_get_tick(const system_ctrl_t *sys);
 
+/* SD SPI clock: spi_clk = aclk / (2*(div+1)); the SD SCK is spi_clk / 4. */
+void system_ctrl_set_spi_div(const system_ctrl_t *sys, uint8_t div);
+
+/* User LEDs: bit 0 = LED1, bit 1 = LED2 (1 = on). */
+void system_ctrl_set_leds(const system_ctrl_t *sys, uint32_t mask);
+
 #endif

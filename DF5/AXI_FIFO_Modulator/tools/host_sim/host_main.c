@@ -14,6 +14,7 @@
 #include "gfx/tft.h"
 #include "source/src_synth.h"
 #include "app/viewer.h"
+#include "app/sd_test.h"
 #include "st7789_emu.h"
 
 static spi_tft_t spi;
@@ -63,6 +64,11 @@ static int check_bits(const cap_pkt_t *p, int idx)
     return (int)best_err;
 }
 
+static axi_qspi_t sd_spi;
+static sd_card_t sd;
+static sd_info_t sd_info;
+static uint32_t host_ticks(void) { static uint32_t t; return t += 1000u; }
+
 static int render(int view, int zoom_presses, const char *out)
 {
     char path[512];
@@ -97,6 +103,11 @@ int main(int argc, char **argv)
         viewer_process_block(&viewer, iq, CFG_IQ_BLOCK);
         blocks++;
     }
+    /* SD CARD screen: the card as the stub bus sees it (no card) */
+    axi_qspi_init(&sd_spi, 0u);
+    sd_test_run(&sd_info, &sd, &sd_spi, host_ticks, 1000000u);
+    viewer.sd = &sd_info;
+
     printf("capture: %d blocks, %u packets, panel %ux%u\n",
            blocks, (unsigned)viewer.cap.npkt, tft.w, tft.h);
     for (m = 0; m < viewer.cap.npkt; m++) {

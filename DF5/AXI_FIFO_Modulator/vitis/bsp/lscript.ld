@@ -1,8 +1,8 @@
-/* lscript.ld -- everything in the 32 KB LMB BRAM at 0x0 (code, data, bss); stack on top (bsp/crt0.S). */
+/* lscript.ld -- everything in the 64 KB LMB BRAM at 0x0 (code, data, bss); stack on top (bsp/crt0.S). */
 ENTRY(_start)
 MEMORY
 {
-  bram (rwx) : ORIGIN = 0x00000000, LENGTH = 0x00008000
+  bram (rwx) : ORIGIN = 0x00000000, LENGTH = 0x00010000
 }
 SECTIONS
 {
@@ -26,5 +26,5 @@ SECTIONS
   _end = .;
 }
 
-/* crt0.S puts the stack top at 0x7FF0; keep at least 1 KB for it. */
-ASSERT(_end <= 0x7BF0, "BRAM full: less than 1 KB left for the stack")
+/* crt0.S puts the stack top at 0xFFF0; keep at least 2 KB for it. */
+ASSERT(_end <= 0xF7F0, "BRAM full: less than 2 KB left for the stack")

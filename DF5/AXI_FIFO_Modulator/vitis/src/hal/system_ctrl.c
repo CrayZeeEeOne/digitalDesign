@@ -35,3 +35,13 @@ uint32_t system_ctrl_get_tick(const system_ctrl_t *sys)
 {
     return system_ctrl_read(sys, SYS_REG_TICK);
 }
+
+void system_ctrl_set_spi_div(const system_ctrl_t *sys, uint8_t div)
+{
+    system_ctrl_write(sys, SYS_REG_SPI_CLKDIV, div);
+}
+
+void system_ctrl_set_leds(const system_ctrl_t *sys, uint32_t mask)
+{
+    system_ctrl_write(sys, SYS_REG_LED, mask & 3u);
+}
