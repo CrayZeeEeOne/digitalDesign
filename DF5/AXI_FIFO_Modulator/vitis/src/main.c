@@ -1,8 +1,16 @@
 /*
- * main.c -- DF5 signal viewer: the DSP runs in the PL (dsp_top: test generator
- * -> demodulator -> capture, FFT, waterfall); the firmware configures it, waits
- * for one capture, reads it out and shows it; keys switch screens, zoom and
- * scroll (app/keys.h).
+ * main.c -- DF5 signal viewer. The DSP runs in the PL (dsp_top); the firmware
+ * configures it and draws. Three states (app/viewer.h):
+ *
+ *   LIVE    default: the RTL generator runs in real time (4.5 MS/s); the PL
+ *           computes the spectrum of every block into a ring of waterfall rows
+ *           and records ~73 ms windows for RAW / BITS, re-armed right after
+ *           each read-out. The current screen is redrawn every CFG_LIVE_FRAME_MS
+ *           (RAW / BITS when a new window is there). K2: pause.
+ *   PAUSE   the last picture frozen, zoom and scroll work. K1+K2: live again.
+ *   STATIC  replay of SIM.IQ from the SD card (K2 on the SD CARD screen, or after
+ *           a file upload from the PC): one capture, not real time -- the card
+ *           reads ~450 KB/s, real time needs 18 MB/s. K1+K2: live again.
  *
  *   app/     capture data, screens, keys    gfx/  TFT driver, plot primitives
  *   hal/     drivers of the PL blocks       bsp/  startup, linker script, addresses
@@ -17,6 +25,7 @@
 #include "hal/axi_qspi.h"
 #include "hal/sd_card.h"
 #include "hal/dsp_rtl.h"
+#include "hal/iq_stream.h"
 #include "gfx/tft.h"
 #include "app/viewer.h"
 #include "app/keys.h"
@@ -24,7 +33,6 @@
 #include "app/sd_format.h"
 #include "app/view_sd.h"
 #include "app/sd_iq.h"
-#include "hal/iq_stream.h"
 
 static spi_tft_t spi;
 static tft_t tft;
@@ -39,10 +47,28 @@ static sd_info_t sd_info;
 static sd_format_result_t sd_fmt;
 static iq_stream_t iqs;
 static int sd_mounted;         /* the card's FAT is mounted (replay / upload possible) */
-static int replay;             /* the current capture replays SD_IQ_FILE */
+
+enum { ST_LIVE, ST_PAUSE, ST_REPLAY, ST_STATIC };
+static int state;
 
 /* Holding K2 this long on the SD CARD screen formats the card (keys repeat every 120 ms). */
 #define FORMAT_HOLD_REPEATS 22u
+
+/* Live waterfall: rows of the PL ring, the newest at the top. */
+#define LIVE_ROW_MS10   ((uint32_t)(((1u << CFG_LIVE_WF_SHIFT) * SPEC_FFT_N * 10000u) / (CFG_SAMPLE_RATE_HZ / 1000u) / 1000u))
+#define LIVE_ROWS_MAX   192u   /* about the height of the plot: one row per line */
+
+typedef struct {
+    uint32_t newest;           /* absolute index of the top row */
+    uint8_t buf[SPEC_BINS];
+} live_wf_t;
+
+static live_wf_t live_wf;
+static uint8_t live_fft[SPEC_BINS];
+static uint32_t live_fft_from;  /* first ring row not yet in a drawn FFT */
+
+/* Frames drawn and the time spent drawing them: read over JTAG to see the frame rate. */
+volatile uint32_t stat_frames, stat_draw_ms;
 
 /* Milliseconds since start, from the free-running AXI clock counter. */
 static uint32_t millis(void)
@@ -62,6 +88,12 @@ static uint32_t ticks(void)
     return system_ctrl_get_tick(&sys);
 }
 
+/* Called between the windows of a long redraw: decoded packets are not lost. */
+static void poll_dsp(void)
+{
+    (void)dsp_rtl_poll(&dsp);
+}
+
 /* microSD test; LED1 = card read OK, LED2 = error. */
 static void run_sd_test(void)
 {
@@ -70,25 +102,90 @@ static void run_sd_test(void)
     sd_mounted = (sd_info.err == SD_OK && sd_info.fat_bits) && sd_iq_mount(&sd, &sd_spi) == 0;
 }
 
-/*
- * New capture: replay of SD_IQ_FILE when the card has it (the file is recorded
- * from its first sample, so no waiting for a packet end), else the test generator.
- */
-static void start_capture(void)
+static const uint8_t *live_row(void *ctx, uint16_t i)
+{
+    live_wf_t *w = (live_wf_t *)ctx;
+
+    dsp_rtl_read_row(&dsp, w->newest - i, w->buf);
+    return w->buf;
+}
+
+/* Live spectra of this frame: the waterfall ends at the newest row; the FFT trace
+   is the max over the rows since the last frame (no packet slips between frames). */
+static void live_spectra(void)
+{
+    uint32_t rows = dsp_rtl_spec_rows(&dsp);
+    uint32_t r, b;
+    uint8_t row[SPEC_BINS];
+
+    if (rows == 0u) return;
+    live_wf.newest = rows - 1u;
+    viewer.wf.nrows = (uint16_t)((rows < LIVE_ROWS_MAX) ? rows : LIVE_ROWS_MAX);
+    viewer.wf.span_ms10 = viewer.wf.nrows * LIVE_ROW_MS10;
+
+    if (live_fft_from + 255u < rows) live_fft_from = rows - 1u;   /* fell behind the ring */
+    if (live_fft_from >= rows) live_fft_from = rows - 1u;
+    for (b = 0u; b < SPEC_BINS; b++) live_fft[b] = 0u;
+    for (r = live_fft_from; r < rows; r++) {
+        dsp_rtl_read_row(&dsp, r, row);
+        for (b = 0u; b < SPEC_BINS; b++) if (row[b] > live_fft[b]) live_fft[b] = row[b];
+    }
+    live_fft_from = rows;
+}
+
+static void go_live(void)
+{
+    sd_iq_close();
+    dsp_rtl_live_start(&dsp);
+    state = ST_LIVE;
+    viewer.state = VSTATE_LIVE;
+    viewer.cap = 0;                    /* until the first window is there */
+    viewer.fft = live_fft;
+    viewer.fft_tag = "LIVE";
+    viewer.wf.row = live_row;
+    viewer.wf.ctx = &live_wf;
+    viewer.wf.nrows = 0u;
+    viewer.wf.live = 1u;
+    viewer.source = "RTL GENERATOR";
+    live_fft_from = dsp_rtl_spec_rows(&dsp);
+}
+
+static void go_pause(void)
+{
+    dsp_rtl_live_spectrum(&dsp, 0);    /* the ring keeps its rows */
+    state = ST_PAUSE;
+    viewer.state = VSTATE_PAUSE;
+    viewer.fft_tag = "PAUSE";
+}
+
+static void resume_live(void)
+{
+    dsp_rtl_live_spectrum(&dsp, 1);
+    dsp_rtl_rearm(&dsp);
+    state = ST_LIVE;
+    viewer.state = VSTATE_LIVE;
+    viewer.fft_tag = "LIVE";
+    live_fft_from = dsp_rtl_spec_rows(&dsp);
+}
+
+/* One capture from SD_IQ_FILE (file recorded from its first sample: no trigger wait). */
+static int start_replay(void)
 {
     uint32_t n;
 
-    viewer_set_capture(&viewer, 0);
-    replay = sd_mounted && sd_iq_open(SD_IQ_FILE, &n) == 0;
+    if (!sd_mounted || sd_iq_open(SD_IQ_FILE, &n) != 0) return 0;
     iq_stream_flush(&iqs);
-    dsp_rtl_set_source(&dsp, replay ? DSP_SRC_STREAM : DSP_SRC_GEN);
-    dsp_rtl_start(&dsp, replay, &cap);
-    viewer.source = replay ? "SD: " SD_IQ_FILE : "RTL GENERATOR";
+    dsp_rtl_set_source(&dsp, DSP_SRC_STREAM);
+    dsp_rtl_start(&dsp, 1);
+    viewer_use_capture(&viewer, 0);
+    viewer.source = "SD: " SD_IQ_FILE;
+    state = ST_REPLAY;
+    return 1;
 }
 
 int main(void)
 {
-    int redraw = 1, capturing = 1;
+    int redraw = 1, full = 1, new_cap = 0;
     uint32_t last_draw = 0u;
 
     xil_printf("\r\n=== DF5 signal viewer ===\r\n");
@@ -117,66 +214,95 @@ int main(void)
         spi_tft_flush(&spi);
         return -1;
     }
-    start_capture();
     viewer.sd = &sd_info;
     viewer.sd_fmt = &sd_fmt;
     keys_init(&keys);
+    tft.idle = poll_dsp;
+    go_live();
     (void)millis();
 
     while (1) {
-        /* a file sent from the PC (scripts/sd_upload.tcl): capture again from it */
-        if (sd_mounted && sd_iq_upload_poll()) {
-            start_capture();
-            capturing = 1;
+        static uint32_t hold_n, hold_last;
+        uint32_t now = millis();
+        key_action_t a = keys_poll(&keys, system_ctrl_get_buttons_raw(&sys), now);
+
+        /*------------------------------------------------------ keys */
+        if (a == KEY_BOTH && state != ST_LIVE) {
+            if (state == ST_PAUSE) resume_live(); else go_live();
+            full = redraw = 1;
+        } else if (viewer.mode == VIEW_SD && a == KEY_ZOOM) {
+            /* K2 on the SD CARD screen: test the card again, replay SIM.IQ if it is there */
+            run_sd_test();
+            if (start_replay()) viewer.mode = VIEW_RAW;
+            full = redraw = 1;
+        } else if (viewer.mode == VIEW_SD && a == KEY_PAN_FWD) {
+            /* K2 held: count repeats of one continuous hold, format after ~3 s */
+            hold_n = (now - hold_last > 300u) ? 1u : hold_n + 1u;
+            hold_last = now;
+            if (hold_n == FORMAT_HOLD_REPEATS) {
+                sd_iq_close();
+                view_sd_formatting(&tft);
+                spi_tft_flush(&spi);
+                system_ctrl_set_leds(&sys, 3u);
+                sd_format_run(&sd_fmt, &sd, &sd_spi, ticks, CFG_ACLK_HZ);
+                run_sd_test();          /* show the new file system */
+                go_live();
+                full = redraw = 1;
+            }
+        } else if (state == ST_LIVE && a == KEY_ZOOM && viewer.mode != VIEW_SD) {
+            go_pause();
+            full = redraw = 1;
+        } else if (a != KEY_NONE && viewer_key(&viewer, a)) {
+            full = redraw = 1;
         }
 
-        if (capturing) {
-            /* the PL records in real time (~0.1 s); the progress bar every 20 ms */
-            uint32_t now = millis();
+        /* a file sent from the PC (tools/sd_upload.py): replay it */
+        if (sd_mounted && sd_iq_upload_poll() && start_replay()) full = redraw = 1;
 
-            if (replay) sd_iq_feed(&iqs);
-            if (dsp_rtl_poll(&dsp, &cap) == DSP_CAP_DONE) {
-                if (replay) sd_iq_close();
-                dsp_rtl_read_capture(&dsp, &cap);
-                viewer_set_capture(&viewer, &cap);
-                capturing = 0;
-                redraw = 1;
-            } else if (now - last_draw >= 20u) {
-                viewer_set_progress(&viewer, dsp_rtl_capture_pos(&dsp), CFG_CAPTURE_SAMPLES);
-                last_draw = now;
-                redraw = 1;
-            }
-        } else {
-            static uint32_t hold_n, hold_last;
-            uint32_t now = millis();
-            key_action_t a = keys_poll(&keys, system_ctrl_get_buttons_raw(&sys), now);
+        /*---------------------------------------------------- the PL */
+        if (state == ST_LIVE || state == ST_REPLAY) {
+            int st;
 
-            if (viewer.mode == VIEW_SD && a == KEY_ZOOM) {
-                run_sd_test();          /* K2 short on the SD CARD screen: test the card again */
-                redraw = 1;
-            } else if (viewer.mode == VIEW_SD && a == KEY_PAN_FWD) {
-                /* K2 held: count repeats of one continuous hold, format after ~3 s */
-                hold_n = (now - hold_last > 300u) ? 1u : hold_n + 1u;
-                hold_last = now;
-                if (hold_n == FORMAT_HOLD_REPEATS) {
-                    view_sd_formatting(&tft);
-                    spi_tft_flush(&spi);
-                    system_ctrl_set_leds(&sys, 3u);
-                    sd_format_run(&sd_fmt, &sd, &sd_spi, ticks, CFG_ACLK_HZ);
-                    run_sd_test();      /* show the new file system */
-                    start_capture();
-                    capturing = 1;
-                    redraw = 1;
+            if (state == ST_REPLAY) sd_iq_feed(&iqs);
+            st = dsp_rtl_poll(&dsp);
+            if (st == DSP_CAP_DONE) {
+                if (state == ST_LIVE) {
+                    dsp_rtl_read_capture(&dsp, &cap, 0);
+                    dsp_rtl_rearm(&dsp);          /* the next window records while we draw */
+                    if (!viewer.cap) full = 1;
+                    viewer.cap = &cap;
+                    new_cap = 1;
+                } else {
+                    sd_iq_close();
+                    dsp_rtl_read_capture(&dsp, &cap, 1);
+                    viewer_use_capture(&viewer, &cap);
+                    state = ST_STATIC;
+                    full = redraw = 1;
                 }
-            } else if (a != KEY_NONE && viewer_key(&viewer, a)) {
-                redraw = 1;
+            } else if (state == ST_REPLAY && now - last_draw >= 100u) {
+                viewer_set_progress(&viewer, dsp_rtl_capture_pos(&dsp), CFG_CAPTURE_SAMPLES);
+                full = redraw = 1;
             }
         }
 
+        /*---------------------------------------------------- the screen */
+        if (state == ST_LIVE && now - last_draw >= CFG_LIVE_FRAME_MS) {
+            if (viewer.mode == VIEW_FFT || viewer.mode == VIEW_WATERFALL) {
+                live_spectra();
+                redraw = 1;
+            } else if (new_cap) {
+                redraw = 1;
+            }
+        }
         if (redraw) {
-            viewer_draw(&viewer, &tft);
+            if (viewer.mode == VIEW_FFT || viewer.mode == VIEW_WATERFALL)
+                if (state == ST_LIVE && viewer.wf.nrows == 0u) live_spectra();
+            viewer_draw(&viewer, &tft, full);
             spi_tft_flush(&spi);
-            redraw = 0;
+            stat_frames++;
+            stat_draw_ms += millis() - now;
+            last_draw = now;
+            redraw = full = new_cap = 0;
         }
     }
 

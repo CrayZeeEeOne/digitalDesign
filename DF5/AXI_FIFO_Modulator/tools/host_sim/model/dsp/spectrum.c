@@ -34,7 +34,7 @@ void spectrum_mag(const int16_t *iq, int16_t *re, int16_t *im, uint16_t *mag)
     fft_q15(re, im, SPEC_FFT_N);
 
     for (n = 0u; n < SPEC_BINS; n++) {
-        uint16_t k = (uint16_t)((n - SPEC_BINS / 2u) & (SPEC_FFT_N - 1u));
+        uint16_t k = (uint16_t)((n + SPEC_BIN0) & (SPEC_FFT_N - 1u));
         mag[n] = clamp_u16((uint32_t)(abs32(re[k]) + abs32(im[k])));
     }
 }

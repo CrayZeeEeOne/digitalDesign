@@ -129,18 +129,42 @@ void spi_tft_cmd(spi_tft_t *dev, uint8_t cmd, const uint8_t *args, uint32_t n)
 }
 
 /*--------------------------------------------------------------------------*/
+/* Free pixel slots (2 bytes each) in the TX FIFO right now. */
+static uint32_t fifo_room16(spi_tft_t *dev)
+{
+    uint32_t level = (rd(dev, SPI_TFT_REG_STATUS) >> SPI_TFT_ST_LEVEL_SH) & SPI_TFT_ST_LEVEL_MSK;
+    return (level >= SPI_TFT_FIFO_DEPTH) ? 0u : (SPI_TFT_FIFO_DEPTH - level) / 2u;
+}
+
 void spi_tft_repeat16(spi_tft_t *dev, uint16_t value, uint32_t count)
 {
     uint8_t hi = (uint8_t)(value >> 8);
     uint8_t lo = (uint8_t)(value & 0xFF);
 
     set_dc(dev, 1);
-    while (count--) {
-        while (rd(dev, SPI_TFT_REG_STATUS) & SPI_TFT_ST_TX_FULL)
-            ;
-        wr(dev, SPI_TFT_REG_TXDATA, hi);
-        while (rd(dev, SPI_TFT_REG_STATUS) & SPI_TFT_ST_TX_FULL)
-            ;
-        wr(dev, SPI_TFT_REG_TXDATA, lo);
+    while (count) {
+        uint32_t n = fifo_room16(dev);
+        if (n > count) n = count;
+        count -= n;
+        while (n--) {
+            wr(dev, SPI_TFT_REG_TXDATA, hi);
+            wr(dev, SPI_TFT_REG_TXDATA, lo);
+        }
+    }
+}
+
+/*--------------------------------------------------------------------------*/
+void spi_tft_write16(spi_tft_t *dev, const uint16_t *px, uint32_t n)
+{
+    set_dc(dev, 1);
+    while (n) {
+        uint32_t k = fifo_room16(dev);
+        if (k > n) k = n;
+        n -= k;
+        while (k--) {
+            wr(dev, SPI_TFT_REG_TXDATA, (uint32_t)(*px >> 8));
+            wr(dev, SPI_TFT_REG_TXDATA, (uint32_t)(*px & 0xFFu));
+            px++;
+        }
     }
 }

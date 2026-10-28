@@ -13,6 +13,19 @@ key_action_t keys_poll(keys_t *k, uint32_t pressed, uint32_t now_ms)
 {
     int i;
 
+    /* both down: one KEY_BOTH, then nothing until both are released */
+    if ((pressed & 3u) == 3u && !k->chord) {
+        k->chord = 1u;
+        return KEY_BOTH;
+    }
+    if (k->chord) {
+        if ((pressed & 3u) == 0u) {
+            k->chord = 0u;
+            k->down[0] = k->down[1] = 0u;
+        }
+        return KEY_NONE;
+    }
+
     for (i = 0; i < 2; i++) {
         uint8_t is_down = (uint8_t)((pressed >> i) & 1u);
 

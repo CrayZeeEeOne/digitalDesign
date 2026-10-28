@@ -39,7 +39,11 @@
 #define CAP_PKT        0x320u    /* + 16 * p: START, END, FIRST_BIT, NBITS */
 #define CAP_BITS       0x400u    /* + 64 * p */
 #define CAP_RAW        0x800u
-#define CAP_WF         0x2000u
+#define SPEC_CTRL      0x340u    /* [0] live */
+#define SPEC_ROWS      0x344u
+#define SPEC_BIN0_REG  0x348u    /* first FFT bin of the 128 shown */
+#define CAP_WF         0x8000u   /* ring: row r at 0x8000 + 128 * (r % 256) */
+#define WF_RING        256u
 
 #define ID_DEMOD       0x44534D01u
 #define ID_DSP         0x44535001u
@@ -92,6 +96,7 @@ int dsp_rtl_init(dsp_rtl_t *d, uint32_t base)
 
     wr(d, CAP_WARMUP, CFG_WARMUP_SAMPLES);
     wr(d, CAP_LEN, CFG_CAPTURE_SAMPLES);
+    wr(d, SPEC_BIN0_REG, SPEC_BIN0);                        /* spectrum window around the channel */
     wr(d, CAP_COL, ((CFG_CAPTURE_SAMPLES % CAP_RAW_COLS) << 16) | (CFG_CAPTURE_SAMPLES / CAP_RAW_COLS));
     return 0;
 }
@@ -101,24 +106,54 @@ void dsp_rtl_set_source(dsp_rtl_t *d, dsp_src_t src)
     wr(d, SRC_CTRL, src == DSP_SRC_GEN ? 0x3u : 0x0u);
 }
 
-void dsp_rtl_start(dsp_rtl_t *d, int nowait, cap_data_t *c)
+void dsp_rtl_start(dsp_rtl_t *d, int nowait)
 {
-    c->ndec = 0u;
+    d->ndec = 0u;
+    wr(d, SPEC_CTRL, 0u);                                   /* spectrum of the capture only */
+    wr(d, CAP_WARMUP, CFG_WARMUP_SAMPLES);
     wr(d, DM_CTRL, 0x6u);                                   /* soft reset + clear stats */
     wr(d, CAP_MODE, (nowait ? 0x100u : 0u) | SPEC_WF_SHIFT);
     wr(d, CAP_CTRL, 0x1u);                                  /* arm */
     wr(d, DM_CTRL, 0x1u);                                   /* enable: samples flow */
 }
 
-int dsp_rtl_poll(dsp_rtl_t *d, cap_data_t *c)
+void dsp_rtl_live_start(dsp_rtl_t *d)
+{
+    d->ndec = 0u;
+    wr(d, SRC_CTRL, 0x3u);                                  /* generator, on */
+    wr(d, DM_CTRL, 0x6u);                                   /* demodulator from scratch */
+    wr(d, DM_CTRL, 0x1u);
+    wr(d, CAP_WARMUP, 1u);                                  /* the demodulator keeps running */
+    wr(d, CAP_MODE, 0x100u | CFG_LIVE_WF_SHIFT);            /* no trigger wait */
+    wr(d, SPEC_CTRL, 1u);                                   /* spectrum of every block */
+    wr(d, CAP_CTRL, 0x1u);
+}
+
+void dsp_rtl_rearm(dsp_rtl_t *d)
+{
+    d->ndec = 0u;
+    wr(d, CAP_CTRL, 0x1u);
+}
+
+void dsp_rtl_live_spectrum(dsp_rtl_t *d, int on)
+{
+    wr(d, SPEC_CTRL, on ? 1u : 0u);
+}
+
+uint32_t dsp_rtl_spec_rows(const dsp_rtl_t *d)
+{
+    return rd(d, SPEC_ROWS);
+}
+
+int dsp_rtl_poll(dsp_rtl_t *d)
 {
     int state = (int)(rd(d, CAP_STATUS) & 7u);
 
     if (rd(d, DM_STATUS) & 0x8u) {                          /* a result is latched */
         uint32_t flags = rd(d, DM_RES_FLAGS);
 
-        if (((flags >> 6) & 3u) == 0u && state == DSP_CAP_RECORD && c->ndec < CAP_PKTS) {
-            cap_dec_t *p = &c->dec[c->ndec++];
+        if (((flags >> 6) & 3u) == 0u && state == DSP_CAP_RECORD && d->ndec < CAP_PKTS) {
+            cap_dec_t *p = &d->dec[d->ndec++];
             uint32_t n = rd(d, DM_RES_BYTES) & 0xFFu, k;
 
             if (n > CAP_DEC_BYTES) n = CAP_DEC_BYTES;
@@ -157,9 +192,17 @@ static void copy_words(const dsp_rtl_t *d, uint32_t reg, void *dst, uint32_t n)
     }
 }
 
-void dsp_rtl_read_capture(const dsp_rtl_t *d, cap_data_t *c)
+void dsp_rtl_read_row(const dsp_rtl_t *d, uint32_t row, uint8_t *dst)
+{
+    copy_words(d, CAP_WF + 128u * (row % WF_RING), dst, SPEC_BINS / 4u);
+}
+
+void dsp_rtl_read_capture(const dsp_rtl_t *d, cap_data_t *c, int spectra)
 {
     uint32_t p;
+
+    c->ndec = d->ndec;
+    for (p = 0u; p < d->ndec; p++) c->dec[p] = d->dec[p];
 
     copy_words(d, CAP_RAW, c->raw, CAP_RAW_COLS);
     c->npkt = (uint8_t)((rd(d, CAP_STATUS) >> 4) & 3u);
@@ -172,6 +215,7 @@ void dsp_rtl_read_capture(const dsp_rtl_t *d, cap_data_t *c)
         k->nbits = (uint16_t)rd(d, r + 12u);
         copy_words(d, CAP_BITS + 64u * p, k->bits, CAP_PKT_BITS / 32u);
     }
+    if (!spectra) return;
     copy_words(d, CAP_WF, c->wf, CAP_WF_ROWS * SPEC_BINS / 4u);
 
     /* spectrum of the capture = max hold over the waterfall rows */

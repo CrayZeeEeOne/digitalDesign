@@ -33,6 +33,7 @@ int tft_init(tft_t *tft, spi_tft_t *spi, tft_rot_t rot)
     uint8_t arg;
 
     tft->spi   = spi;
+    tft->idle  = 0;
     tft->x_off = 0;
     tft->y_off = TFT_ROW_OFF;
 
@@ -233,4 +234,12 @@ void tft_blit(tft_t *tft, const uint16_t *pixels, uint32_t count)
         b[1] = (uint8_t)(pixels[i] & 0xFF);
         spi_tft_write(tft->spi, 1, b, 2);
     }
+}
+
+void tft_push_rect(tft_t *tft, uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t *px)
+{
+    if (w == 0u || h == 0u || x + w > tft->w || y + h > tft->h) return;
+    if (tft->idle) tft->idle();
+    tft_set_window(tft, x, y, (uint16_t)(x + w - 1u), (uint16_t)(y + h - 1u));
+    spi_tft_write16(tft->spi, px, (uint32_t)w * h);
 }

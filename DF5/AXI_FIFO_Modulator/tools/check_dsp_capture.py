@@ -84,13 +84,13 @@ def fft_q15(re, im):
         length <<= 1
 
 
-def spectrum_mag(iq):
+def spectrum_mag(iq, bin0=192):
     re = [s16((iq[n][0] * HANN_Q15[4 * n + 2]) >> 15) for n in range(FFT_N)]
     im = [s16((iq[n][1] * HANN_Q15[4 * n + 2]) >> 15) for n in range(FFT_N)]
     fft_q15(re, im)
     mag = []
     for n in range(BINS):
-        k = (n - BINS // 2) & (FFT_N - 1)
+        k = (n + bin0) & (FFT_N - 1)
         mag.append(min(65535, abs(re[k]) + abs(im[k])))
     return mag
 
@@ -124,7 +124,7 @@ def load_dump(path):
         f = line.split()
         if not f:
             continue
-        if f[0] in ("T0", "LEN", "WF_SHIFT"):
+        if f[0] in ("T0", "LEN", "WF_SHIFT", "BIN0"):
             d[f[0]] = int(f[1])
         elif f[0] == "STATUS":
             d["STATUS"] = int(f[1], 16)
@@ -192,7 +192,7 @@ def main():
     rows = []
     for blk in range(first_blk, last_blk + 1):
         k0 = blk * FFT_N - g0
-        mag = spectrum_mag(iq[k0:k0 + FFT_N])
+        mag = spectrum_mag(iq[k0:k0 + FFT_N], d.get("BIN0", 192))
         acc = [a + m for a, m in zip(acc, mag)]
         blocks += 1
         if blocks == (1 << shift):
@@ -218,7 +218,7 @@ def main():
     errors += bad
     peak = max(range(BINS), key=lambda b: mh[b])
     print(f"max hold (з рядків): пік у біні {peak} "
-          f"({(peak - BINS // 2) * 4.5e6 / FFT_N / 1e3:+.0f} кГц), рівень {mh[peak]}")
+          f"({((peak + d.get('BIN0', 192)) % FFT_N - (FFT_N if (peak + d.get('BIN0', 192)) % FFT_N >= FFT_N // 2 else 0)) * 4.5e6 / FFT_N / 1e3:+.0f} кГц від LO), рівень {mh[peak]}")
 
     # ------------------------------------------------------------ пакети --
     meta_path = args.iq + ".json"

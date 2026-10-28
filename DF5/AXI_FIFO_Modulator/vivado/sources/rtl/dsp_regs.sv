@@ -1,5 +1,5 @@
 //==============================================================================
-// dsp_regs -- увесь DSP у залізі за одним AXI4-Lite (16 КБ адрес):
+// dsp_regs -- увесь DSP у залізі за одним AXI4-Lite (64 КБ адрес):
 //
 //   S_AXIS (replay з SD через iq_stream) --+
 //                                          +--> rtl_demod  (демодуляція, пакети)
@@ -40,11 +40,18 @@
 //   0x0400..0x047F     біти пакетів: 0x400 пакет 0, 0x440 пакет 1; байт k у
 //                      слові k/4, біти [8*(k%4)+:8]; перший біт -- MSB байта 0
 //   0x0800..0x0DFF     384 колонки: [7:0] i_lo [15:8] i_hi [23:16] q_lo [31:24] q_hi (int8)
-//   0x2000..0x33FF     waterfall, 40 рядків x 128 байт (рядок 0 -- початок запису,
-//                      бін 0 = нижня частота); max hold софт рахує з рядків
+//   0x0340 SPEC_CTRL   [0] live: спектр усього потоку, рядки по колу (інакше --
+//                      лише блоки захоплення, рядки 0..39 від arm)
+//   0x0344 SPEC_ROWS   RO: рядків записано (live: усього; рядок N -- у кільці на N % 256)
+//   0x0348 SPEC_BIN0   [7:0] перший бін FFT-256 у вікні з 128 бінів (192 = центр;
+//                      (offset_каналу_в_бінах - 64) & 255 -- вікно навколо каналу)
+//
+//   0x8000..0xFFFF     waterfall, кільце 256 рядків x 128 байт: рядок r -- слова
+//                      0x8000 + 128*r ... (бін 0 = нижня частота). У режимі
+//                      захоплення рядок 0 -- початок запису. Max hold рахує софт.
 //==============================================================================
 module dsp_regs #(
-  parameter int          C_S_AXI_ADDR_WIDTH = 14,
+  parameter int          C_S_AXI_ADDR_WIDTH = 16,
   parameter logic [31:0] ID_VALUE           = 32'h4453_5001
 )(
   input  logic                          s_axi_aclk,
@@ -109,6 +116,8 @@ module dsp_regs #(
   logic [31:0] cap_warmup, cap_len;
   logic [15:0] cap_col_q, cap_col_r;
   logic [4:0]  cap_wf_shift;
+  logic        spec_live;
+  logic [7:0]  spec_bin0;
 
   always_ff @(posedge s_axi_aclk) begin
     if (rst) begin
@@ -129,6 +138,8 @@ module dsp_regs #(
       cap_col_q    <= 16'd853;
       cap_col_r    <= 16'd128;
       cap_wf_shift <= 5'd5;
+      spec_live    <= 1'b0;
+      spec_bin0    <= 8'd192;
       cap_nowait   <= 1'b0;
     end
     else begin
@@ -149,6 +160,8 @@ module dsp_regs #(
           10'h30C: cap_len     <= wr_data;
           10'h310: begin cap_col_q <= wr_data[15:0]; cap_col_r <= wr_data[31:16]; end
           10'h314: begin cap_wf_shift <= wr_data[4:0]; cap_nowait <= wr_data[8]; end
+          10'h340: spec_live <= wr_data[0];
+          10'h348: spec_bin0 <= wr_data[7:0];
           default: ;
         endcase
       end
@@ -230,20 +243,22 @@ module dsp_regs #(
   );
 
   //-------------------------------------------------------------- спектр --
-  logic [7:0]  wf_rows;
+  logic [31:0] wf_rows;
   logic        spec_busy;
   logic [31:0] wf_rd;
 
   dsp_spectrum u_spec (
     .clk (s_axi_aclk), .rst (rst),
-    .arm (cap_arm),
+    .arm (cap_arm && !spec_live),             // live: захоплення не чіпає спектр
+    .cfg_live (spec_live),
+    .cfg_bin0 (spec_bin0),
     .cfg_wf_shift (cap_wf_shift),
     .in_valid (fire), .in_rec (cap_rec),
     .in_i (src_data[15:0]), .in_q (src_data[31:16]),
     .in_ready (spec_ready),
     .st_rows (wf_rows), .st_busy (spec_busy),
     .rd_en (rd_req),
-    .rd_wf_addr (rd_req_addr[12:2]),
+    .rd_wf_addr (rd_req_addr[14:2]),
     .rd_wf_data (wf_rd)
   );
 
@@ -264,7 +279,7 @@ module dsp_regs #(
       10'h220: ctl_rd = gen_pkts;
       10'h224: ctl_rd = {31'd0, gen_burst};
       10'h2FC: ctl_rd = ID_VALUE;
-      10'h304: ctl_rd = {16'd0, wf_rows, spec_busy, cap_in_pkt, cap_npkt,
+      10'h304: ctl_rd = {16'd0, (wf_rows > 32'd255) ? 8'd255 : wf_rows[7:0], spec_busy, cap_in_pkt, cap_npkt,
                          (cap_state == 3'd4), cap_state};
       10'h308: ctl_rd = cap_warmup;
       10'h30C: ctl_rd = cap_len;
@@ -280,6 +295,9 @@ module dsp_regs #(
       10'h334: ctl_rd = pkt_end[1];
       10'h338: ctl_rd = pkt_first[1];
       10'h33C: ctl_rd = 32'(pkt_nbits[1]);
+      10'h340: ctl_rd = {31'd0, spec_live};
+      10'h344: ctl_rd = wf_rows;
+      10'h348: ctl_rd = 32'(spec_bin0);
       default: ;
     endcase
   end
@@ -289,7 +307,7 @@ module dsp_regs #(
     else if (rd_addr[AW-1:10] == '0)                   rd_data = ctl_rd;       // 0x0200
     else if (rd_addr[AW-1:7] == 7'h08)                 rd_data = bits_rd;      // 0x0400
     else if (rd_addr[AW-1:11] == 3'b001)               rd_data = raw_rd;       // 0x0800
-    else if (rd_addr[AW-1:13] == 1'b1)                 rd_data = wf_rd;        // 0x2000
+    else if (rd_addr[AW-1])                            rd_data = wf_rd;        // 0x8000
     else                                               rd_data = '0;
   end
 

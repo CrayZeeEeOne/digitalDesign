@@ -26,6 +26,7 @@ set f [open $out w]
 puts $f "T0 [r [expr {$B + 0x31C}]]"
 puts $f "LEN [r [expr {$B + 0x30C}]]"
 puts $f "WF_SHIFT [expr {[r [expr {$B + 0x314}]] & 31}]"
+puts $f "BIN0 [expr {[r [expr {$B + 0x348}]] & 255}]"
 puts $f [format "STATUS %08x" $st]
 for {set p 0} {$p < 2} {incr p} {
     set a [expr {$B + 0x320 + 16 * $p}]
@@ -36,6 +37,6 @@ for {set p 0} {$p < 2} {incr p} {
 set k 0
 foreach w [mrd -value [expr {$B + 0x800}] 384] { puts $f [format "RAW %d %08x" $k $w]; incr k }
 set k 0
-foreach w [mrd -value [expr {$B + 0x2000}] 1280] { puts $f [format "WF %d %08x" $k $w]; incr k }
+foreach w [mrd -value [expr {$B + 0x8000}] 1280] { puts $f [format "WF %d %08x" $k $w]; incr k }
 close $f
 puts "dump -> $out"

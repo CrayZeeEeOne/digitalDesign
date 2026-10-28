@@ -49,6 +49,8 @@ typedef struct {
     uint16_t   h;
     uint16_t   x_off;     /* зсув панелі, залежить від модуля */
     uint16_t   y_off;
+    void     (*idle)(void);   /* викликається між вікнами tft_push_rect (може бути NULL):
+                                 довге малювання не заважає опитувати інші блоки */
 } tft_t;
 
 /*------------------------------------------------- API --------------------*/
@@ -82,5 +84,8 @@ void tft_draw_text(tft_t *tft, uint16_t x, uint16_t y, const char *s,
 
 /* Потокове завантаження рядка пікселів -- для картинки з SD (Блок 2). */
 void tft_blit(tft_t *tft, const uint16_t *pixels, uint32_t count);
+
+/* A w x h rectangle of pixels (row by row) in one window: no flicker. */
+void tft_push_rect(tft_t *tft, uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t *px);
 
 #endif /* TFT_H */

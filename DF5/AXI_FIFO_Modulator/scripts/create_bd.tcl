@@ -294,6 +294,9 @@ proc create_hier_cell_microblaze_0_local_memory { parentCell nameHier } {
   set microblaze_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:microblaze:11.0 microblaze_0 ]
   set_property -dict [list \
     CONFIG.C_DEBUG_ENABLED {1} \
+    CONFIG.C_USE_BARREL {1} \
+    CONFIG.C_USE_HW_MUL {1} \
+    CONFIG.C_USE_DIV {1} \
     CONFIG.C_D_AXI {1} \
     CONFIG.C_D_LMB {1} \
     CONFIG.C_ENABLE_CONVERSION {0} \

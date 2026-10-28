@@ -82,7 +82,7 @@ static int render(int view, int zoom_presses, const char *out)
     viewer.zoom[view].level = 0u;
     viewer.zoom[view].off = 0u;
     for (i = 0; i < zoom_presses; i++) viewer_key(&viewer, KEY_ZOOM);
-    viewer_draw(&viewer, &tft);
+    viewer_draw(&viewer, &tft, 1);
 
     snprintf(path, sizeof(path), "%s/view%d_x%d.ppm", out, view, 1 << zoom_presses);
     if (save_ppm(path) != 0) {
@@ -111,7 +111,7 @@ int main(int argc, char **argv)
         capture_model_block(&model, iq, CFG_IQ_BLOCK);
         blocks++;
     }
-    viewer_set_capture(&viewer, &model.d);
+    viewer_use_capture(&viewer, &model.d);
     /* SD CARD screen: the card as the stub bus sees it (no card) */
     axi_qspi_init(&sd_spi, 0u);
     sd_test_run(&sd_info, &sd, &sd_spi, host_ticks, 1000000u);

@@ -8,7 +8,9 @@
  */
 #include <stddef.h>
 
-#define NO_LIBCALL __attribute__((optimize("no-tree-loop-distribute-patterns")))
+/* used: with -flto the calls the compiler emits for struct copies appear only at
+   code generation, after LTO would have dropped an unreferenced memcpy. */
+#define NO_LIBCALL __attribute__((used, optimize("no-tree-loop-distribute-patterns")))
 
 NO_LIBCALL void *memcpy(void *dst, const void *src, size_t n)
 {

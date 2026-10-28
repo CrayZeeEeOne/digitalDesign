@@ -28,7 +28,8 @@
 #define SPI_TFT_ST_TX_FULL    (1u << 1)
 #define SPI_TFT_ST_TX_EMPTY   (1u << 2)
 #define SPI_TFT_ST_LEVEL_SH   4
-#define SPI_TFT_ST_LEVEL_MSK  0xF
+#define SPI_TFT_ST_LEVEL_MSK  0x1F        /* [8:4]: 0..SPI_TFT_FIFO_DEPTH */
+#define SPI_TFT_FIFO_DEPTH    16u
 
 #define SPI_TFT_ID_EXPECTED   0x5F778901u
 
@@ -64,5 +65,9 @@ void spi_tft_cmd(spi_tft_t *dev, uint8_t cmd, const uint8_t *args, uint32_t n);
 
 /* Повторити 16-бітне слово count разів (заливка областей кольором). */
 void spi_tft_repeat16(spi_tft_t *dev, uint16_t value, uint32_t count);
+
+/* n 16-bit pixels (RGB565, MSB first) as data; fills the FIFO in bursts:
+   the status is read once per burst, not once per byte. */
+void spi_tft_write16(spi_tft_t *dev, const uint16_t *px, uint32_t n);
 
 #endif /* SPI_TFT_H */

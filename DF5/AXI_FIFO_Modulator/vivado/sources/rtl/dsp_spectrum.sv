@@ -7,18 +7,27 @@
 // якому хоч один відлік записувався захопленням (in_rec), обробляється:
 //
 //   вікно Ханна (fft_hann256.mem) -> FFT-256 radix-2, кожна стадія /2
-//   (twiddle з fft_tw128.mem -- пораховані як sin_q15() у C) -> |re| + |im| 128 центральних
+//   (twiddle з fft_tw128.mem -- пораховані як sin_q15() у C) -> |re| + |im| 128 бінів
+//   вікна від cfg_bin0 (192 -- центральні, інакше вікно навколо каналу)
 //   бінів -> накопичення; кожні 2^cfg_wf_shift блоків -> рядок waterfall
 //   spec_log(acc >> cfg_wf_shift) (~16*log2). Max hold по рядках рахує софт
 //   (40 x 128 порівнянь), у залізі він не потрібен.
 //
 // Пам'ять: два банки 256 x {im, re} (у один пишеться вхід, другий рахує FFT),
-// waterfall WF_ROWS x 128 байт, накопичувачі 128 x 32 (синхронна RAM).
+// waterfall -- кільце WF_RING x 128 байт, накопичувачі 128 x 32 (синхронна RAM).
+//
+// Два режими:
+//   захоплення (cfg_live = 0)  обробляються лише блоки, що записуються (in_rec);
+//                              arm обнуляє лічильник, пишуться рядки 0..WF_ROWS-1
+//   live (cfg_live = 1)        кожен блок потоку; рядки йдуть по колу без кінця,
+//                              st_rows -- скільки всього записано (рядок
+//                              st_rows-1 -- найсвіжіший, у кільці на st_rows % WF_RING)
 // FFT: 8 стадій x 128 метеликів по 2 такти + дренаж -> ~2.1 тис. тактів на
 // блок. Якщо наступний блок прийшов раніше, ніж FFT закінчив, in_ready = 0.
 //==============================================================================
 module dsp_spectrum #(
-  parameter int WF_ROWS   = 40,
+  parameter int WF_ROWS   = 40,                 // рядків одного захоплення
+  parameter int WF_RING   = 256,                // рядків у кільці (степінь двійки)
   parameter     HANN_FILE = "fft_hann256.mem",
   parameter     TW_FILE   = "fft_tw128.mem"
 )(
@@ -26,6 +35,8 @@ module dsp_spectrum #(
   input  logic               rst,
 
   input  logic               arm,            // нове захоплення: обнулити накопичення
+  input  logic               cfg_live,       // спектр усього потоку, кільце рядків
+  input  logic [7:0]         cfg_bin0,       // перший бін вікна з 128 (192 = центр, +-Fs/4)
   input  logic [4:0]         cfg_wf_shift,   // блоків на рядок = 2^cfg_wf_shift
 
   input  logic               in_valid,       // прийнятий відлік потоку
@@ -34,12 +45,12 @@ module dsp_spectrum #(
   input  logic signed [15:0] in_q,
   output logic               in_ready,
 
-  output logic [7:0]         st_rows,        // записано рядків
+  output logic [31:0]        st_rows,        // записано рядків (live: усього)
   output logic               st_busy,
 
   // читання з AXI (синхронне: дані наступного такту)
   input  logic               rd_en,
-  input  logic [10:0]        rd_wf_addr,     // слово: рядок*32 + бін/4
+  input  logic [12:0]        rd_wf_addr,     // слово: рядок кільця*32 + бін/4
   output logic [31:0]        rd_wf_data      // біни 4w..4w+3, молодший -- у [7:0]
 );
 
@@ -151,9 +162,9 @@ module dsp_spectrum #(
         s1_i <= in_i;
         s1_q <= in_q;
         n_in <= n_in + 1'b1;
-        if (in_rec) blk_rec <= 1'b1;
+        if (in_rec || cfg_live) blk_rec <= 1'b1;
         if (n_in == 8'd255) begin
-          if (blk_rec || in_rec) pend <= 1'b1;
+          if (blk_rec || in_rec || cfg_live) pend <= 1'b1;
           else                   blk_rec <= 1'b0;
         end
       end
@@ -216,7 +227,7 @@ module dsp_spectrum #(
   logic signed [15:0] m_ra, m_ia;
   logic [31:0]        s_new_a, s_new_b;
 
-  wire [7:0] o_addr = 8'(o_n) - 8'd64;          // бін k = (n - 64) & 255
+  wire [7:0] o_addr = 8'(o_n) + cfg_bin0;       // бін k = (n + bin0) & 255
   assign a_raddr = (fst == F_OUT) ? o_addr : ba;
   assign b_raddr = bb;
 
@@ -244,18 +255,19 @@ module dsp_spectrum #(
   logic        row_last;                       // поточний блок завершує рядок
   logic [15:0] blocks_lo;
   logic [31:0] blocks;
-  logic [7:0]  rows;
+  logic [31:0] rows;                           // рядків записано від arm (live: від скиду)
+  wire         row_wr_ok = cfg_live || (rows < 32'(WF_ROWS));
 
   logic        clr_act;
   logic [6:0]  clr_n;
   logic [31:0] acc [0:127];
   // waterfall: 4 байтові лани (бін % 4), щоб читати слово за раз
-  logic [7:0]  wf0 [0:WF_ROWS*32-1];
-  logic [7:0]  wf1 [0:WF_ROWS*32-1];
-  logic [7:0]  wf2 [0:WF_ROWS*32-1];
-  logic [7:0]  wf3 [0:WF_ROWS*32-1];
+  logic [7:0]  wf0 [0:WF_RING*32-1];
+  logic [7:0]  wf1 [0:WF_RING*32-1];
+  logic [7:0]  wf2 [0:WF_RING*32-1];
+  logic [7:0]  wf3 [0:WF_RING*32-1];
   logic        wf_we;
-  logic [10:0] wf_waddr;
+  logic [12:0] wf_waddr;
   logic [1:0]  wf_lane;
   logic [7:0]  wf_wdata;
 
@@ -370,7 +382,7 @@ module dsp_spectrum #(
             fft_busy <= 1'b0;
             if (row_last) begin
               blocks_lo <= '0;
-              if (rows < 8'(WF_ROWS)) rows <= rows + 1'b1;
+              if (row_wr_ok) rows <= rows + 1'b1;
             end
             else blocks_lo <= blocks_lo + 1'b1;
             blocks <= blocks + 1'b1;
@@ -398,9 +410,9 @@ module dsp_spectrum #(
         acc_waddr <= o2_n;
         acc_wdata <= row_last ? 32'd0 : o_sum;
         if (row_last) begin
-          if (rows < 8'(WF_ROWS)) begin
+          if (row_wr_ok) begin
             wf_we    <= 1'b1;
-            wf_waddr <= 11'(rows) * 11'd32 + 11'(o2_n[6:2]);
+            wf_waddr <= {rows[7:0], o2_n[6:2]};       // кільце: рядок % 256
             wf_lane  <= o2_n[1:0];
             wf_wdata <= o_log;
           end

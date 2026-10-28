@@ -49,4 +49,41 @@ int32_t plot_series_scale(const plot_series_t *s, int32_t m);
 /* Min/max envelope over the whole box width, joined to the previous column. */
 void plot_series_draw(tft_t *tft, const plot_box_t *b, const plot_series_t *s, int32_t scale, uint16_t color);
 
+/*
+ * One pixel column of a plot, built in RAM and sent in one window: the old
+ * picture is overwritten in place, so live redraws do not flicker.
+ * y is relative to the top of the column; everything outside [0, h) is clipped.
+ */
+#define PLOT_COL_MAX 240
+
+typedef struct {
+    uint16_t h;
+    uint16_t px[PLOT_COL_MAX];
+} plot_col_t;
+
+void plot_col_fill(plot_col_t *c, uint16_t h, uint16_t color);
+void plot_col_span(plot_col_t *c, int16_t y1, int16_t y2, uint16_t color);
+static inline void plot_col_dot(plot_col_t *c, int16_t y, uint16_t color)
+{
+    if (y >= 0 && y < (int16_t)c->h) c->px[y] = color;
+}
+void plot_col_send(tft_t *tft, uint16_t x, uint16_t y0, const plot_col_t *c);
+
+/*
+ * Work memory of the screens, shared: only one screen draws at a time
+ * (BRAM is tight). PLOT_MAX_W: widest plot area.
+ */
+#define PLOT_MAX_W 320
+
+typedef union {
+    plot_col_t col;                                  /* RAW, BITS */
+    struct { uint8_t t_lo[PLOT_MAX_W], t_hi[PLOT_MAX_W]; uint16_t line[PLOT_MAX_W]; } fft;
+    struct { uint16_t lut[256]; uint16_t line[PLOT_MAX_W]; uint8_t xbin[PLOT_MAX_W]; } wf;
+} plot_scratch_t;
+
+extern plot_scratch_t plot_scratch;
+
+/* Text padded with spaces to n characters (erases a longer old label). */
+void plot_text_pad(tft_t *tft, uint16_t x, uint16_t y, const char *s, uint16_t n, uint16_t fg);
+
 #endif

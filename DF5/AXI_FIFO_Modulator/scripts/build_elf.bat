@@ -12,6 +12,9 @@ REM PL; its C model lives in tools\host_sim\model. Output:
 REM   vitis\elf\df5_app.elf   (loaded by run_board.tcl)
 REM
 REM mb-gcc is looked up in %XILINX_VITIS%, then in PATH.
+REM The CPU flags (-mxl-barrel-shift, hardware mul/div) must match the MicroBlaze in
+REM create_bd.tcl (C_USE_BARREL / C_USE_HW_MUL / C_USE_DIV): an ELF built with them
+REM does not run on an older bitstream without these units.
 REM ============================================================================
 setlocal EnableDelayedExpansion
 
@@ -40,7 +43,7 @@ for %%D in (hal gfx app lib\fatfs) do (
 if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
 
 "%MB_GCC%" -Os -flto -Wall -Wextra -ffreestanding -nostdlib -fno-stack-protector ^
-    -mcpu=v11.0 -mlittle-endian -mxl-soft-mul ^
+    -mcpu=v11.0 -mlittle-endian -mxl-barrel-shift -mno-xl-soft-mul -mno-xl-soft-div ^
     -I"%BSP%\include" -I"%SRC%" -T "%BSP%\lscript.ld" ^
     "%BSP%\crt0.S" "%BSP%\stubs.c" "%BSP%\libc_min.c" %FILES% ^
     -lgcc -o "%OUT_ELF%"

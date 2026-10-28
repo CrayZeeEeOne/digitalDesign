@@ -9,7 +9,7 @@
 
 /*------------------------------------------------------------- clocks ----*/
 #define CFG_ACLK_HZ           100000000u   /* AXI clock of MicroBlaze and the IP */
-#define CFG_TFT_SCLK_HZ       12500000u    /* SPI clock to the ST7789 */
+#define CFG_TFT_SCLK_HZ       25000000u    /* SPI clock to the ST7789 */
 
 /*------------------------------------------------------------- signal ----*/
 /* As in the task and sim.iq (tools/iqgen.py): LO 867.4 MHz, channel 866.31 MHz,
@@ -32,7 +32,13 @@
    waterfall row = 2^SPEC_WF_SHIFT blocks = CFG_CAPTURE_SAMPLES / 40 samples. */
 #define SPEC_FFT_N            256
 #define SPEC_BINS             128
+/* The 128 bins shown are centred on the channel (not on the LO): the channel is
+   SPEC_CH_BINS bins from the LO, the window starts SPEC_BINS/2 below it. */
+#define SPEC_CH_BINS          ((int32_t)(((int64_t)CFG_CHANNEL_FREQ_HZ - (int64_t)CFG_CENTER_FREQ_HZ) * SPEC_FFT_N                                          - (int64_t)CFG_SAMPLE_RATE_HZ / 2) / (int64_t)CFG_SAMPLE_RATE_HZ)
+#define SPEC_BIN0             ((uint32_t)(SPEC_CH_BINS - SPEC_BINS / 2) & (SPEC_FFT_N - 1u))
 #define SPEC_LOG_0DBFS        224
 #define SPEC_WF_SHIFT         5
+#define CFG_LIVE_WF_SHIFT     6            /* live: one row per 64 blocks = 3.64 ms */
+#define CFG_LIVE_FRAME_MS     40u          /* live: redraw at most every 40 ms */
 
 #endif

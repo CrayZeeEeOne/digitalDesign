@@ -1,5 +1,7 @@
 #include "gfx/plot.h"
 
+plot_scratch_t plot_scratch;
+
 static int32_t iabs(int32_t x) { return (x < 0) ? -x : x; }
 
 char *plot_u32_to_str(char *p, uint32_t x)
@@ -112,4 +114,39 @@ void plot_series_draw(tft_t *tft, const plot_box_t *b, const plot_series_t *s, i
         pt = t;
         pb = bo;
     }
+}
+
+void plot_col_fill(plot_col_t *c, uint16_t h, uint16_t color)
+{
+    uint16_t y;
+
+    c->h = (h > PLOT_COL_MAX) ? PLOT_COL_MAX : h;
+    for (y = 0u; y < c->h; y++) c->px[y] = color;
+}
+
+void plot_col_span(plot_col_t *c, int16_t y1, int16_t y2, uint16_t color)
+{
+    int16_t y;
+
+    if (y1 > y2) { y = y1; y1 = y2; y2 = y; }
+    if (y1 < 0) y1 = 0;
+    if (y2 >= (int16_t)c->h) y2 = (int16_t)(c->h - 1u);
+    for (y = y1; y <= y2; y++) c->px[y] = color;
+}
+
+void plot_col_send(tft_t *tft, uint16_t x, uint16_t y0, const plot_col_t *c)
+{
+    tft_push_rect(tft, x, y0, 1u, c->h, c->px);
+}
+
+void plot_text_pad(tft_t *tft, uint16_t x, uint16_t y, const char *s, uint16_t n, uint16_t fg)
+{
+    char buf[60];
+    uint16_t i = 0u;
+
+    if (n >= sizeof(buf)) n = sizeof(buf) - 1u;
+    while (i < n && s[i]) { buf[i] = s[i]; i++; }
+    while (i < n) buf[i++] = ' ';
+    buf[n] = '\0';
+    tft_draw_text(tft, x, y, buf, fg, TFT_BLACK, 1);
 }

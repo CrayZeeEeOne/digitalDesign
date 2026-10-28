@@ -85,3 +85,12 @@ void spi_tft_repeat16(spi_tft_t *dev, uint16_t value, uint32_t count)
         spi_tft_put(dev, 1, (uint8_t)(value & 0xFF));
     }
 }
+
+void spi_tft_write16(spi_tft_t *dev, const uint16_t *px, uint32_t n)
+{
+    while (n--) {
+        spi_tft_put(dev, 1, (uint8_t)(*px >> 8));
+        spi_tft_put(dev, 1, (uint8_t)(*px & 0xFFu));
+        px++;
+    }
+}

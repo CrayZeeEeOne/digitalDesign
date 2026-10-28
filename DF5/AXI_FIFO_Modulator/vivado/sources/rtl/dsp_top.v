@@ -1,11 +1,11 @@
 //==============================================================================
 // dsp_top -- Verilog-2001 обгортка dsp_regs (увесь DSP у залізі: генератор,
 // демодулятор, FFT/waterfall, захоплення) для IP Integrator.
-// Порти за конвенцією Xilinx -> S_AXI (AXI4-Lite, 16 КБ) і S_AXIS (I/Q з iq_stream).
+// Порти за конвенцією Xilinx -> S_AXI (AXI4-Lite, 64 КБ) і S_AXIS (I/Q з iq_stream).
 // Мапа регістрів -- у шапці dsp_regs.sv.
 //==============================================================================
 module dsp_top #(
-  parameter integer C_S_AXI_ADDR_WIDTH = 14
+  parameter integer C_S_AXI_ADDR_WIDTH = 16
 )(
   (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 s_axi_aclk CLK" *)
   (* X_INTERFACE_PARAMETER = "ASSOCIATED_BUSIF s_axi:S_AXIS, ASSOCIATED_RESET s_axi_aresetn" *)
