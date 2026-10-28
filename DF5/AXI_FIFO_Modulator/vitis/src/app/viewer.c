@@ -24,6 +24,7 @@ void viewer_init(viewer_t *v)
     v->cap = 0;
     v->prog_done = 0u;
     v->prog_total = 1u;
+    v->source = "";
 }
 
 void viewer_set_mode(viewer_t *v, view_mode_t mode)
@@ -97,6 +98,7 @@ static void draw_capture_progress(tft_t *tft, const viewer_t *v)
     tft_clear(tft, TFT_BLACK);
     tft_draw_rect(tft, 0, 0, tft->w, tft->h, TFT_GREEN);
     tft_draw_text(tft, 20, 80, "CAPTURE", TFT_WHITE, TFT_BLACK, 2);
+    tft_draw_text(tft, 20, 134, v->source, TFT_GRAY, TFT_BLACK, 1);
     tft_draw_rect(tft, 20, 110, bw, 16, TFT_GRAY);
     tft_fill_rect(tft, 22, 112, (uint16_t)done, 12, TFT_GREEN);
 }

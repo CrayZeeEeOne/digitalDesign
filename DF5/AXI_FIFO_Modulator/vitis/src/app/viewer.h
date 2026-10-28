@@ -34,6 +34,7 @@ typedef struct {
     zoom_t zoom[VIEW_COUNT];
     const cap_data_t *cap;     /* NULL while recording */
     uint32_t prog_done, prog_total;   /* recording progress */
+    const char *source;        /* where the capture comes from, shown while recording */
     const sd_info_t *sd;       /* shown on the SD CARD screen, may be NULL */
     const sd_format_result_t *sd_fmt;
 } viewer_t;

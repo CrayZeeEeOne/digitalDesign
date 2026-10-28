@@ -7,7 +7,7 @@
 // якому хоч один відлік записувався захопленням (in_rec), обробляється:
 //
 //   вікно Ханна (fft_hann256.mem) -> FFT-256 radix-2, кожна стадія /2
-//   (twiddle з fft_sin257.mem, як sin_q15() у C) -> |re| + |im| 128 центральних
+//   (twiddle з fft_tw128.mem -- пораховані як sin_q15() у C) -> |re| + |im| 128 центральних
 //   бінів -> накопичення; кожні 2^cfg_wf_shift блоків -> рядок waterfall
 //   spec_log(acc >> cfg_wf_shift) (~16*log2). Max hold по рядках рахує софт
 //   (40 x 128 порівнянь), у залізі він не потрібен.
@@ -20,7 +20,7 @@
 module dsp_spectrum #(
   parameter int WF_ROWS   = 40,
   parameter     HANN_FILE = "fft_hann256.mem",
-  parameter     SIN_FILE  = "fft_sin257.mem"
+  parameter     TW_FILE   = "fft_tw128.mem"
 )(
   input  logic               clk,
   input  logic               rst,
@@ -45,24 +45,11 @@ module dsp_spectrum #(
 
   //---------------------------------------------------------- таблиці -----
   logic signed [15:0] hann [0:255];
-  logic signed [15:0] sinq [0:256];
+  logic [31:0]        twrom [0:127];               // {wi, wr} для m = k << (7 - stage)
   initial begin
     $readmemh(HANN_FILE, hann);
-    $readmemh(SIN_FILE, sinq);
+    $readmemh(TW_FILE, twrom);
   end
-
-  function automatic logic signed [15:0] sin_q15(input logic [15:0] ph);
-    logic [9:0] idx;
-    logic [7:0] o;
-    idx = ph[15:6];
-    o   = idx[7:0];
-    case (idx[9:8])
-      2'd0: return  sinq[{1'b0, o}];
-      2'd1: return  sinq[9'd256 - {1'b0, o}];
-      2'd2: return -sinq[{1'b0, o}];
-      default: return -sinq[9'd256 - {1'b0, o}];
-    endcase
-  endfunction
 
   function automatic logic [7:0] bitrev8(input logic [7:0] x);
     for (int k = 0; k < 8; k++) bitrev8[k] = x[7 - k];
@@ -171,7 +158,12 @@ module dsp_spectrum #(
         end
       end
       // останній відлік блоку записано (s1 вже порожній) -> віддати банк FFT
-      if (pend && !s1_v && !fft_busy && !fft_start) begin
+      if (arm) begin
+        // нове захоплення: блок попереднього, що чекає FFT, відкидається
+        pend    <= 1'b0;
+        blk_rec <= 1'b0;
+      end
+      else if (pend && !s1_v && !fft_busy && !fft_start) begin
         pend      <= 1'b0;
         blk_rec   <= 1'b0;
         fb        <= wb;
@@ -208,6 +200,12 @@ module dsp_spectrum #(
   // читання -- адреса комбінаційна, дані з BRAM у наступному такті.
   assign a_addr_f = a_we_f ? a_waddr : a_raddr;
   assign b_addr_f = b_we_f ? b_waddr : b_raddr;
+
+  // twiddle з ROM: m = k * 128 / half (k = 0..half-1)
+  wire [6:0]  tw_m  = 7'(tw_ph >> 8);
+  wire [31:0] tw_q  = twrom[tw_m];
+  wire signed [15:0] tw_wr = tw_q[15:0];
+  wire signed [15:0] tw_wi = tw_q[31:16];
 
   // конвеєр метелика: R (читання) -> M (добутки) -> S (суми) -> W (запис)
   logic               m_v, s_v;
@@ -297,8 +295,8 @@ module dsp_spectrum #(
         m_v  <= 1'b1;
         m_a  <= ba;
         m_b  <= bb;
-        m_wr <= sin_q15(tw_ph + 16'd16384);
-        m_wi <= -sin_q15(tw_ph);
+        m_wr <= tw_wr;
+        m_wi <= tw_wi;
       end
       // M: дані прийшли (BRAM має один такт латентності)
       s_v <= 1'b0;
@@ -419,6 +417,10 @@ module dsp_spectrum #(
       end
 
       if (arm) begin
+        // FFT попереднього захоплення, якщо ще йде, обривається: його блок
+        // не має потрапити в новий рядок
+        fst       <= F_IDLE;
+        fft_busy  <= 1'b0;
         blocks    <= '0;
         blocks_lo <= '0;
         rows      <= '0;

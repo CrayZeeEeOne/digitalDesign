@@ -4,7 +4,7 @@ gen_mem.py -- генерує таблиці для RTL ($readmemh) і для C-�
 
     vivado/sources/mem/nco_sin_1024.mem   1024 x int16, повний період синуса
                                           (cos = sin з індексом +256)
-    vivado/sources/mem/fft_sin257.mem     sin(2*pi*k/1024), k = 0..256 (як dsp_sin_q15)
+    vivado/sources/mem/fft_tw128.mem      twiddle FFT-256: {wi, wr} для m = 0..127, як у fft.c
     vivado/sources/mem/fft_hann256.mem    вікно Ханна для FFT-256: dsp_hann_q15[4n+2]
     vivado/sources/mem/gen_gauss.mem      GFSK-імпульс для iq_gen: 3 x 256, Q15
     tools/host_sim/model/dsp/dsp_tables.c таблиці для C-моделі DSP (host_sim):
@@ -44,11 +44,24 @@ def main():
     # щоб RTL збігався з C-моделлю біт у біт
     sin_q = [q15(math.sin(2 * math.pi * k / FFT_N)) for k in range(FFT_N // 4 + 1)]
     hann = [q15(0.5 * (1 - math.cos(2 * math.pi * n / FFT_N))) for n in range(FFT_N)]
-    path = os.path.join(MEM_DIR, "fft_sin257.mem")
+    # twiddle метелика: у fft.c ph = k * 65536/len = m * 256, де m = k << (7 - стадія);
+    # wr = sin_q15(ph + 16384), wi = -sin_q15(ph) -- рахуємо тут тим самим кодом,
+    # RTL лише читає готову пару (одна ROM, без арифметики індексу)
+    def sin_q15c(ph):
+        idx = (ph >> 6) & 1023
+        q, o = idx >> 8, idx & 255
+        if q == 0: return sin_q[o]
+        if q == 1: return sin_q[256 - o]
+        if q == 2: return -sin_q[o]
+        return -sin_q[256 - o]
+    path = os.path.join(MEM_DIR, "fft_tw128.mem")
     with open(path, "w", encoding="ascii") as f:
-        f.write("// fft_sin257.mem -- sin(2*pi*k/1024), k = 0..256, Q15 (= dsp_sin_q15), tools/gen_mem.py\n")
-        for v in sin_q:
-            f.write(f"{v & 0xFFFF:04x}\n")
+        f.write("// fft_tw128.mem -- FFT-256 twiddles {wi[31:16], wr[15:0]}, m = 0..127, tools/gen_mem.py\n")
+        for m in range(128):
+            ph = m * 256
+            wr = sin_q15c((ph + 16384) & 0xFFFF)
+            wi = -sin_q15c(ph)
+            f.write(f"{((wi & 0xFFFF) << 16) | (wr & 0xFFFF):08x}\n")
     print("->", path)
     path = os.path.join(MEM_DIR, "fft_hann256.mem")
     with open(path, "w", encoding="ascii") as f:

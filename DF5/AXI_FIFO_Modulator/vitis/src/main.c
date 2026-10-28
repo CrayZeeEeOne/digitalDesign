@@ -23,6 +23,8 @@
 #include "app/sd_test.h"
 #include "app/sd_format.h"
 #include "app/view_sd.h"
+#include "app/sd_iq.h"
+#include "hal/iq_stream.h"
 
 static spi_tft_t spi;
 static tft_t tft;
@@ -35,6 +37,9 @@ static axi_qspi_t sd_spi;
 static sd_card_t sd;
 static sd_info_t sd_info;
 static sd_format_result_t sd_fmt;
+static iq_stream_t iqs;
+static int sd_mounted;         /* the card's FAT is mounted (replay / upload possible) */
+static int replay;             /* the current capture replays SD_IQ_FILE */
 
 /* Holding K2 this long on the SD CARD screen formats the card (keys repeat every 120 ms). */
 #define FORMAT_HOLD_REPEATS 22u
@@ -62,6 +67,23 @@ static void run_sd_test(void)
 {
     sd_test_run(&sd_info, &sd, &sd_spi, ticks, CFG_ACLK_HZ);
     system_ctrl_set_leds(&sys, (sd_info.err == SD_OK && sd_info.fat_bits) ? 1u : 2u);
+    sd_mounted = (sd_info.err == SD_OK && sd_info.fat_bits) && sd_iq_mount(&sd, &sd_spi) == 0;
+}
+
+/*
+ * New capture: replay of SD_IQ_FILE when the card has it (the file is recorded
+ * from its first sample, so no waiting for a packet end), else the test generator.
+ */
+static void start_capture(void)
+{
+    uint32_t n;
+
+    viewer_set_capture(&viewer, 0);
+    replay = sd_mounted && sd_iq_open(SD_IQ_FILE, &n) == 0;
+    iq_stream_flush(&iqs);
+    dsp_rtl_set_source(&dsp, replay ? DSP_SRC_STREAM : DSP_SRC_GEN);
+    dsp_rtl_start(&dsp, replay, &cap);
+    viewer.source = replay ? "SD: " SD_IQ_FILE : "RTL GENERATOR";
 }
 
 int main(void)
@@ -89,19 +111,32 @@ int main(void)
         spi_tft_flush(&spi);
         return -1;
     }
-    dsp_rtl_set_source(&dsp, DSP_SRC_GEN);
-    dsp_rtl_start(&dsp, 0, &cap);
+    if (iq_stream_init(&iqs, XPAR_IQ_STREAM_TOP_0_BASEADDR) != 0) {
+        tft_clear(&tft, TFT_BLACK);
+        tft_draw_text(&tft, 10, 100, "IQ STREAM NOT FOUND", TFT_RED, TFT_BLACK, 2);
+        spi_tft_flush(&spi);
+        return -1;
+    }
+    start_capture();
     viewer.sd = &sd_info;
     viewer.sd_fmt = &sd_fmt;
     keys_init(&keys);
     (void)millis();
 
     while (1) {
+        /* a file sent from the PC (scripts/sd_upload.tcl): capture again from it */
+        if (sd_mounted && sd_iq_upload_poll()) {
+            start_capture();
+            capturing = 1;
+        }
+
         if (capturing) {
             /* the PL records in real time (~0.1 s); the progress bar every 20 ms */
             uint32_t now = millis();
 
+            if (replay) sd_iq_feed(&iqs);
             if (dsp_rtl_poll(&dsp, &cap) == DSP_CAP_DONE) {
+                if (replay) sd_iq_close();
                 dsp_rtl_read_capture(&dsp, &cap);
                 viewer_set_capture(&viewer, &cap);
                 capturing = 0;
@@ -129,6 +164,8 @@ int main(void)
                     system_ctrl_set_leds(&sys, 3u);
                     sd_format_run(&sd_fmt, &sd, &sd_spi, ticks, CFG_ACLK_HZ);
                     run_sd_test();      /* show the new file system */
+                    start_capture();
+                    capturing = 1;
                     redraw = 1;
                 }
             } else if (a != KEY_NONE && viewer_key(&viewer, a)) {

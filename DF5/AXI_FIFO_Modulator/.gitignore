@@ -68,3 +68,6 @@ tools/host_sim/out/
 
 # standalone xsim runs (scripts/sim_tb.bat)
 vivado/xsim_*/
+
+# board capture dump (scripts/dsp_dump.tcl)
+vivado/board_dump.txt
