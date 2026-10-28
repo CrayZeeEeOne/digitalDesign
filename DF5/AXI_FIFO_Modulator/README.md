@@ -4,7 +4,9 @@
 демодуляція I/Q-записів.
 
 Поточний стан, історія версій і відомі проблеми — у [`STATUS.md`](STATUS.md).
-Як усе влаштовано і що відбувається — у [`docs/architecture.md`](docs/architecture.md).
+Повний опис роботи RTL і прошивки, аж до окремих блоків коду, — у
+[`docs/how_it_works.md`](docs/how_it_works.md): з ним не треба відкривати джерела.
+Старіший огляд — у [`docs/architecture.md`](docs/architecture.md).
 
 ## Структура
 
