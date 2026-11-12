@@ -8,8 +8,8 @@
  *           exactly 4.5 MS/s: real time), once. The PL finds each
  *           hopping packet, demodulates it and records 21.8 ms around it for RAW /
  *           BITS (re-armed after each read-out); FFT shows the spectrum of the
- *           last rows, WATERFALL the whole file at once (0..16.7 s top to bottom,
- *           a white line at the playback position), FFT+WF both.
+ *           last rows, WATERFALL the whole file at once (0..16.7 s top to bottom),
+ *           FFT+WF both.
  *           The int8 file needs 9 MB/s, the bus gives 12.5; an int16 file
  *           (CFG_PLAY_FILE16) plays at ~0.7x.
  *           K2: pause.
@@ -153,8 +153,7 @@ static void live_spectra(void)
     live_wf.rows = rows;
     viewer.wf.nrows = live_wf.nrows;
     viewer.wf.span_ms10 = sd_iq_len() / (CFG_SAMPLE_RATE_HZ / 10000u);
-    viewer.wf.cursor = (!live_wf.frozen && rows - live_wf.start < live_wf.nrows)
-                     ? (uint16_t)(rows - live_wf.start) : 0xFFFFu;
+    viewer.wf.cursor = 0xFFFFu;          /* no playback line: the picture just grows */
     if (rows == 0u) return;
     if (live_wf.frozen) {                       /* the ring stands: the newest row */
         if (live_fft_from != rows) dsp_rtl_read_last(&dsp, live_fft);
