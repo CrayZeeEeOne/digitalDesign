@@ -20,7 +20,8 @@
 //   0x018 SYNC_WORD   [15:0]
 //   0x01C PKT_LEN     [7:0] байтів після sync разом із CRC (1..255)
 //   0x020 CRC_CFG     [15:0] поліном, [31:16] початкове значення
-//   0x024 CRC_RESIDUE [15:0] очікуваний залишок після всього пакета
+//   0x024 CRC_RESIDUE [15:0] очікуваний залишок після всього пакета,
+//                     [16] знебілювати біти після sync PN9 (whitening TI)
 //   0x028 FREQ_INIT   [15:0] початковий поріг слайсера (Q15 кут)
 //   0x02C AFC_CFG     [3:0] зсув швидкого IIR, [7:4] повільного,
 //                     [11:8] зсув IIR девіації, [31:16] довжина швидкої фази
@@ -71,6 +72,10 @@ module rtl_demod_bank #(
 
   output logic        irq,            // RESULT_VALID
 
+  // перестройка на канал ззовні (dsp_hop): замість NCO_INC
+  input  logic        nco_ovr_en,
+  input  logic [31:0] nco_ovr_inc,
+
   // відводи для dsp_capture
   output logic        tap_v,
   output logic        tap_burst,
@@ -91,29 +96,31 @@ module rtl_demod_bank #(
   logic [15:0] cfg_sync_word;
   logic [7:0]  cfg_pkt_len;
   logic [15:0] cfg_crc_poly, cfg_crc_init, cfg_crc_residue;
+  logic        cfg_white;
   logic [15:0] cfg_freq_init;
   logic [3:0]  cfg_sh_fast, cfg_sh_slow, cfg_dev_shift;
   logic [15:0] cfg_fast_len;
 
-  // Значення після скиду = конфігурація з ТЗ: Fs 4.5 МГц, канал 866.31 при
-  // LO 867.4 (NCO +1.09 МГц), R = 16, 19200 бод, sync 0x91D3, 48 байт,
-  // CRC-16/CCITT-FALSE.
+  // Значення після скиду = кадр Alarm-Beacon із запису: Fs 4.5 МГц, канал --
+  // від dsp_hop (NCO_INC 0 = LO), R = 16, 19200 бод, sync 0x91D3, 16 байт після
+  // sync, PN9, CRC-16 0x1021 зі стартом 0x1D0F (інвертований: залишок 0x1D0F).
   always_ff @(posedge s_axi_aclk) begin
     if (!s_axi_aresetn) begin
       cfg_enable      <= 1'b0;
       soft_reset      <= 1'b0;
       clr_stats       <= 1'b0;
       ack_result      <= 1'b0;
-      cfg_nco_inc     <= 32'h3E02_468B;
+      cfg_nco_inc     <= 32'h0000_0000;
       cfg_decim       <= 8'd16;
       cfg_cic_shift   <= 5'd12;
       cfg_burst_thr   <= 32'd0;
       cfg_bit_inc     <= 16'd4474;
       cfg_sync_word   <= 16'h91D3;
-      cfg_pkt_len     <= 8'd48;
+      cfg_pkt_len     <= 8'd16;
       cfg_crc_poly    <= 16'h1021;
-      cfg_crc_init    <= 16'hFFFF;
-      cfg_crc_residue <= 16'h0000;
+      cfg_crc_init    <= 16'h1D0F;
+      cfg_crc_residue <= 16'h1D0F;
+      cfg_white       <= 1'b1;
       cfg_freq_init   <= 16'd0;
       cfg_sh_fast     <= 4'd4;
       cfg_sh_slow     <= 4'd7;
@@ -145,7 +152,7 @@ module rtl_demod_bank #(
             cfg_crc_poly <= wr_data[15:0];
             cfg_crc_init <= wr_data[31:16];
           end
-          9'h024: cfg_crc_residue <= wr_data[15:0];
+          9'h024: begin cfg_crc_residue <= wr_data[15:0]; cfg_white <= wr_data[16]; end
           9'h028: cfg_freq_init   <= wr_data[15:0];
           9'h02C: begin
             cfg_sh_fast   <= wr_data[3:0];
@@ -179,9 +186,9 @@ module rtl_demod_bank #(
   rtl_demod #(.LUT_FILE(LUT_FILE)) u_core (
     .clk (s_axi_aclk), .rst (core_rst),
     .s_valid (s_axis_tvalid), .s_ready (s_axis_tready), .s_data (s_axis_tdata),
-    .cfg_enable, .cfg_nco_inc, .cfg_decim, .cfg_cic_shift, .cfg_burst_thr,
+    .cfg_enable, .cfg_nco_inc (nco_ovr_en ? nco_ovr_inc : cfg_nco_inc), .cfg_decim, .cfg_cic_shift, .cfg_burst_thr,
     .cfg_bit_inc, .cfg_sync_word, .cfg_pkt_len, .cfg_crc_poly, .cfg_crc_init,
-    .cfg_crc_residue, .cfg_freq_init, .cfg_sh_fast, .cfg_sh_slow, .cfg_fast_len,
+    .cfg_crc_residue, .cfg_white, .cfg_freq_init, .cfg_sh_fast, .cfg_sh_slow, .cfg_fast_len,
     .cfg_dev_shift,
     .st_burst, .st_synced, .st_pkt_active, .st_preamble, .st_inverted,
     .st_warmup_done, .st_pavg, .st_noise, .st_thr_on, .st_favg, .st_dev,
@@ -282,7 +289,7 @@ module rtl_demod_bank #(
         8'h18: rd_data = 32'(cfg_sync_word);
         8'h1C: rd_data = 32'(cfg_pkt_len);
         8'h20: rd_data = {cfg_crc_init, cfg_crc_poly};
-        8'h24: rd_data = 32'(cfg_crc_residue);
+        8'h24: rd_data = {15'd0, cfg_white, cfg_crc_residue};
         8'h28: rd_data = 32'(cfg_freq_init);
         8'h2C: rd_data = {cfg_fast_len, 4'd0, cfg_dev_shift, cfg_sh_slow, cfg_sh_fast};
         8'h30: rd_data = st_noise;

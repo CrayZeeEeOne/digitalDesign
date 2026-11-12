@@ -13,7 +13,9 @@
 //   5. детектор преамбули (0xAAAA/0x5555) і sync-слова (пряме або
 //      інвертоване -- тоді далі всі біти інвертуються);
 //   6. збирання байтів MSB-first, CRC-16 біт за бітом по всьому пакету,
-//      запис байтів у пам'ять пакета, результат після pkt_len байтів.
+//      запис байтів у пам'ять пакета, результат після pkt_len байтів;
+//      з cfg_white біти після sync спершу знебілюються PN9 (x^9 + x^5 + 1,
+//      старт 0x1FF, як у радіо TI CC1310) -- байти й CRC рахуються вже по них.
 //
 // Арифметика збігається з tools/demod_model.py один в один.
 //==============================================================================
@@ -33,6 +35,7 @@ module demod_bit_decoder (
   input  logic [15:0]        cfg_crc_poly,
   input  logic [15:0]        cfg_crc_init,
   input  logic [15:0]        cfg_crc_residue,
+  input  logic               cfg_white,      // знебілювати PN9 після sync
 
   // вхід від demod_power (вирівняний)
   input  logic               in_valid,
@@ -84,6 +87,7 @@ module demod_bit_decoder (
   logic        [7:0]  byte_sh, byte_cnt, pkts_in_burst;
   logic        [2:0]  bit_in_byte;
   logic        [15:0] crc;
+  logic        [8:0]  pn;                // PN9 знебілювання
 
   wire signed [15:0] favg16 = favg[23:8];
 
@@ -115,8 +119,11 @@ module demod_bit_decoder (
   assign h16     = hist_n[15:0];
   assign alt8    = (hist_n[7:0] == 8'hAA) || (hist_n[7:0] == 8'h55);
 
-  assign byte_n  = {byte_sh[6:0], bit_now};
-  assign crc_fb  = crc[15] ^ bit_now;
+  // біт даних після sync: рішення XOR PN9 (з cfg_white)
+  wire   dbit    = bit_now ^ (cfg_white & pn[0]);
+
+  assign byte_n  = {byte_sh[6:0], dbit};
+  assign crc_fb  = crc[15] ^ dbit;
   assign crc_n   = {crc[14:0], 1'b0} ^ (crc_fb ? cfg_crc_poly : 16'h0000);
 
   wire        afc_fast = in_burst_len < 32'(cfg_fast_len);
@@ -170,6 +177,7 @@ module demod_bit_decoder (
       win_fsum <= '0; win_fsum_snap <= '0;
       byte_sh <= '0; byte_cnt <= '0; pkts_in_burst <= '0; bit_in_byte <= '0;
       crc <= '0;
+      pn <= 9'h1FF;
       pkt_we <= 1'b0; pkt_waddr <= '0; pkt_wdata <= '0;
       res_strobe <= 1'b0; res_kind <= 2'd0; res_crc_ok <= 1'b0;
     end
@@ -259,11 +267,13 @@ module demod_bit_decoder (
                 bit_in_byte <= '0;
                 byte_cnt    <= '0;
                 crc         <= cfg_crc_init;
+                pn          <= 9'h1FF;
               end
             end
             else if (pkt_active) begin
               byte_sh     <= byte_n;
               crc         <= crc_n;
+              pn          <= {pn[0] ^ pn[5], pn[8:1]};
               bit_in_byte <= bit_in_byte + 1'b1;
               if (byte_done) begin
                 bit_in_byte <= '0;

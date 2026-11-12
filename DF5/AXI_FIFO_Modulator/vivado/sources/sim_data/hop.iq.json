@@ -1,0 +1,29 @@
+{
+ "source": "capture_300MB.iq",
+ "fs": 4500000.0,
+ "lo": 867400000.0,
+ "samples": 318000,
+ "packets": [
+  {
+   "burst_start": 40000,
+   "channel_mhz": 866.7,
+   "channel": 5,
+   "bytes": "0d0000000000e90d1fe907040066f61a",
+   "capture_sample": 415488
+  },
+  {
+   "burst_start": 146000,
+   "channel_mhz": 867.1,
+   "channel": 6,
+   "bytes": "0d0000000000ea0d1fea07040066d0bd",
+   "capture_sample": 1689856
+  },
+  {
+   "burst_start": 252000,
+   "channel_mhz": 867.3,
+   "channel": 7,
+   "bytes": "0d0000000000eb0d1feb070400663d3f",
+   "capture_sample": 2964224
+  }
+ ]
+}

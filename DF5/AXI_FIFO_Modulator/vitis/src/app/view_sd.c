@@ -73,7 +73,7 @@ static void format_line(tft_t *tft, uint16_t x, uint16_t y, const sd_format_resu
     }
 }
 
-void view_sd(tft_t *tft, const sd_info_t *s, const sd_format_result_t *fmt)
+void view_sd(tft_t *tft, const sd_info_t *s, const sd_format_result_t *fmt, const char *note)
 {
     uint16_t x = 8u, y = 32u;
     line_t l;
@@ -81,6 +81,7 @@ void view_sd(tft_t *tft, const sd_info_t *s, const sd_format_result_t *fmt)
 
     if (!s) return;
     format_line(tft, x, (uint16_t)(tft->h - 14u), fmt);
+    if (note) tft_draw_text(tft, x, (uint16_t)(tft->h - 26u), note, TFT_YELLOW, TFT_BLACK, 1);
 
     l_start(&l);
     l_str(&l, "CARD:  ");

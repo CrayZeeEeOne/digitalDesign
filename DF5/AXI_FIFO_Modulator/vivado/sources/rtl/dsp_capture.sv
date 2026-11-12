@@ -3,7 +3,10 @@
 // vitis/src/app/capture.c (без спектра -- його рахує dsp_spectrum).
 //
 //   arm -> WARMUP (cfg_warmup відліків, оцінювачі встигають усталитися)
-//       -> WAIT (до кінця пакета, щоб почати в паузі; не довше cfg_len)
+//       -> WAIT (до кінця пакета, щоб почати в паузі; не довше cfg_len;
+//                з cfg_trig -- до строба trig від dsp_hop, скільки завгодно:
+//                пакет виявлено на FFT, а сюди, через лінію затримки, він
+//                прийде пізніше -- запис починається трохи перед ним)
 //       -> RECORD (cfg_len відліків) -> DONE
 //
 // Під час запису:
@@ -27,6 +30,8 @@ module dsp_capture (
   input  logic [15:0]        cfg_col_q,
   input  logic [15:0]        cfg_col_r,
   input  logic               cfg_nowait,     // після WARMUP одразу запис
+  input  logic               cfg_trig,       // WAIT чекає trig, а не кінця пакета
+  input  logic               trig,
 
   // прийнятий відлік потоку
   input  logic               in_fire,
@@ -152,7 +157,13 @@ module dsp_capture (
           else count <= count + 1'b1;
         end
         C_WAIT: begin
-          if (tap_v && tap_end) begin
+          if (cfg_trig) begin
+            if (trig) begin
+              cs    <= C_RECORD;
+              st_t0 <= in_cnt + (in_fire ? 32'd1 : 32'd0);
+            end
+          end
+          else if (tap_v && tap_end) begin
             cs <= C_RECORD;
             st_t0 <= in_cnt + (in_fire ? 32'd1 : 32'd0);
           end

@@ -7,12 +7,12 @@
 #include "lib/fatfs/diskio_sd.h"
 
 static sd_card_t *card;
-static axi_qspi_t *card_spi;
+static sd_host_t *card_host;
 
-void diskio_sd_attach(sd_card_t *sd, axi_qspi_t *spi)
+void diskio_sd_attach(sd_card_t *sd, sd_host_t *host)
 {
     card = sd;
-    card_spi = spi;
+    card_host = host;
 }
 
 DSTATUS disk_status(BYTE pdrv)
@@ -24,24 +24,20 @@ DSTATUS disk_status(BYTE pdrv)
 DSTATUS disk_initialize(BYTE pdrv)
 {
     if (pdrv != 0u || !card) return STA_NOINIT;
-    if (card->type == SD_TYPE_NONE && sd_init(card, card_spi) != SD_OK) return STA_NOINIT;
+    if (card->type == SD_TYPE_NONE && sd_init(card, card_host) != SD_OK) return STA_NOINIT;
     return 0u;
 }
 
 DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
 {
     if (disk_status(pdrv) & STA_NOINIT) return RES_NOTRDY;
-    for (; count; count--, sector++, buff += SD_BLOCK)
-        if (sd_read(card, (uint32_t)sector, buff) != SD_OK) return RES_ERROR;
-    return RES_OK;
+    return (sd_read_multi(card, (uint32_t)sector, buff, count) == SD_OK) ? RES_OK : RES_ERROR;
 }
 
 DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
 {
     if (disk_status(pdrv) & STA_NOINIT) return RES_NOTRDY;
-    for (; count; count--, sector++, buff += SD_BLOCK)
-        if (sd_write(card, (uint32_t)sector, buff) != SD_OK) return RES_ERROR;
-    return RES_OK;
+    return (sd_write_multi(card, (uint32_t)sector, buff, count) == SD_OK) ? RES_OK : RES_ERROR;
 }
 
 DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff)

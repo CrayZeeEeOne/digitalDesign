@@ -206,6 +206,7 @@ module fsk_demod_top #(
     .cfg_crc_poly     (cfg_crc_poly),
     .cfg_crc_init     (cfg_crc_init),
     .cfg_crc_residue  (cfg_crc_residue),
+    .cfg_white        (1'b0),
     .in_valid         (dbg_pw_valid),
     .in_dphi          (dbg_pw_dphi),
     .in_burst         (dbg_pw_burst),

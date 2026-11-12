@@ -57,7 +57,7 @@ static int scan_dir(sd_info_t *info, const uint8_t *b)
     return 0;
 }
 
-void sd_test_run(sd_info_t *info, sd_card_t *sd, axi_qspi_t *spi,
+void sd_test_run(sd_info_t *info, sd_card_t *sd, sd_host_t *host,
                  uint32_t (*ticks)(void), uint32_t ticks_hz)
 {
     uint32_t n, boot, fat_start, fat_size, data_start, root, root_sectors = 0u, spc;
@@ -67,7 +67,7 @@ void sd_test_run(sd_info_t *info, sd_card_t *sd, axi_qspi_t *spi,
     for (n = 0u; n < sizeof(*info); n++) ((uint8_t *)info)[n] = 0u;
     info->step = "";
 
-    err = sd_init(sd, spi);
+    err = sd_init(sd, host);
     info->type = sd->type;
     info->last_r1 = sd->last_r1;
     info->sectors = sd->sectors;

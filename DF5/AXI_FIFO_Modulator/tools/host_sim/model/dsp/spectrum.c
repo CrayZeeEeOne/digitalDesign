@@ -33,8 +33,12 @@ void spectrum_mag(const int16_t *iq, int16_t *re, int16_t *im, uint16_t *mag)
 
     fft_q15(re, im, SPEC_FFT_N);
 
+    /* the whole band, as dsp_spectrum: point j = max of bins 2j, 2j+1 from SPEC_BIN0 */
     for (n = 0u; n < SPEC_BINS; n++) {
-        uint16_t k = (uint16_t)((n + SPEC_BIN0) & (SPEC_FFT_N - 1u));
-        mag[n] = clamp_u16((uint32_t)(abs32(re[k]) + abs32(im[k])));
+        uint16_t k0 = (uint16_t)((2u * n + SPEC_BIN0) & (SPEC_FFT_N - 1u));
+        uint16_t k1 = (uint16_t)((2u * n + 1u + SPEC_BIN0) & (SPEC_FFT_N - 1u));
+        uint16_t m0 = clamp_u16((uint32_t)(abs32(re[k0]) + abs32(im[k0])));
+        uint16_t m1 = clamp_u16((uint32_t)(abs32(re[k1]) + abs32(im[k1])));
+        mag[n] = (m0 > m1) ? m0 : m1;
     }
 }

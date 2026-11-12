@@ -18,6 +18,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 ELF = os.path.join(ROOT, "vitis", "elf", "df5_app.elf")
@@ -88,20 +89,29 @@ def main():
             open(path, "wb").write(part)
             lines += ["stop", f"dow -data {{{tcl_path(path)}}} 0x{buf:08X}", "con",
                       f"cmd $box 2 {len(part)}"]
-            if i % 32 == 31 or i == n_chunks - 1:
+            if i % 256 == 255 or i == n_chunks - 1:
                 lines.append(f'puts "chunk {i + 1}/{n_chunks}"')
         lines += ["cmd $box 3 0", 'puts "TOTAL [mrd -value [expr {$box + 16}] 1]"', 'puts "UPLOAD OK"']
         script = os.path.join(tmp, "upload.tcl")
         open(script, "w").write("\n".join(lines) + "\n")
 
         xsct = os.path.join(VITIS, "bin", "xsct.bat")
-        p = subprocess.run(["cmd", "/c", xsct, script], capture_output=True, text=True)
-        out = p.stdout + p.stderr
-        for line in out.splitlines():
+        # progress is printed as it comes: a 300 MB file takes a long time
+        p = subprocess.Popen(["cmd", "/c", xsct, script], stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True, errors="replace")
+        out = []
+        t0 = time.time()
+        for line in p.stdout:
+            line = line.rstrip()
+            out.append(line)
             if line.startswith(("CREATE", "chunk", "TOTAL", "UPLOAD")) or "error" in line.lower():
-                print(line)
+                if line.startswith("chunk"):
+                    done = int(line.split()[1].split("/")[0]) * CHUNK
+                    line += "  %.0f KB/s" % (done / 1024 / max(time.time() - t0, 1e-3))
+                print(line, flush=True)
+        p.wait()
         ok = "UPLOAD OK" in out
-        total = next((int(l.split()[1]) for l in out.splitlines() if l.startswith("TOTAL")), -1)
+        total = next((int(l.split()[1]) for l in out if l.startswith("TOTAL")), -1)
         if ok and total != len(data):
             print(f"ERROR: the card got {total} bytes, the file has {len(data)}")
             ok = False

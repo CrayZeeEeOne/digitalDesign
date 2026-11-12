@@ -104,6 +104,7 @@ module rtl_demod_regs #(
     .wr_en, .wr_addr (9'(wr_addr)), .wr_data, .wr_strb, .rd_addr (9'(rd_addr)), .rd_data,
     .s_axis_tvalid, .s_axis_tready, .s_axis_tdata,
     .irq,
+    .nco_ovr_en (1'b0), .nco_ovr_inc ('0),
     .tap_v (), .tap_burst (), .tap_start (), .tap_end (), .tap_bit_v (), .tap_bit (),
     .st_enable ()
   );

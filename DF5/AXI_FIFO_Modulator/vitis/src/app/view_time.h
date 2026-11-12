@@ -9,11 +9,13 @@
 #include "gfx/tft.h"
 #include "app/capture.h"
 #include "app/zoom.h"
+#include "app/rx_stats.h"
 
 #define VIEW_TIME_POINTS CAP_RAW_COLS
 
 /* full: the screen was just cleared (unused: everything is redrawn every time). */
 void view_raw(tft_t *tft, const cap_data_t *c, const zoom_t *z, int full);
-void view_bits(tft_t *tft, const cap_data_t *c, const zoom_t *z, int full);
+/* st: receive statistics shown under the packets (NULL: none). */
+void view_bits(tft_t *tft, const cap_data_t *c, const zoom_t *z, int full, const rx_stats_t *st);
 
 #endif

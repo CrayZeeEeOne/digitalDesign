@@ -6,7 +6,6 @@ gen_mem.py -- генерує таблиці для RTL ($readmemh) і для C-�
                                           (cos = sin з індексом +256)
     vivado/sources/mem/fft_tw128.mem      twiddle FFT-256: {wi, wr} для m = 0..127, як у fft.c
     vivado/sources/mem/fft_hann256.mem    вікно Ханна для FFT-256: dsp_hann_q15[4n+2]
-    vivado/sources/mem/gen_gauss.mem      GFSK-імпульс для iq_gen: 3 x 256, Q15
     tools/host_sim/model/dsp/dsp_tables.c таблиці для C-моделі DSP (host_sim):
                                           синус 1024/4+1 точок, вікно Ханна 1024
 
@@ -68,23 +67,6 @@ def main():
         f.write("// fft_hann256.mem -- Hann window for FFT-256 = dsp_hann_q15[4n+2], tools/gen_mem.py\n")
         for n in range(256):
             f.write(f"{hann[4 * n + 2] & 0xFFFF:04x}\n")
-    print("->", path)
-
-    # GFSK для iq_gen: внесок біта з NRZ +-1 у миттєву частоту, коли до
-    # початку поточного біта минуло u = p/256 бітового інтервалу.
-    #   G(t) = 0.5*(erf(pi*t/a) - erf(pi*(t-1)/a)),  a = sqrt(ln2/2)/BT
-    #   адреса j*256+p: j = 0 наступний біт (t = u-1), 1 поточний (t = u),
-    #   2 попередній (t = u+1). Біти далі +-2 дають < 1e-7 -- відкинуто.
-    bt = 0.5
-    a = math.sqrt(math.log(2) / 2) / bt
-    def g(t):
-        return 0.5 * (math.erf(math.pi * t / a) - math.erf(math.pi * (t - 1) / a))
-    path = os.path.join(MEM_DIR, "gen_gauss.mem")
-    with open(path, "w", encoding="ascii") as f:
-        f.write(f"// gen_gauss.mem -- GFSK BT {bt} pulse, 3 x 256 Q15 (next, current, previous bit), tools/gen_mem.py\n")
-        for j, off in enumerate((-1.0, 0.0, 1.0)):
-            for p in range(256):
-                f.write(f"{q15(g(p / 256 + off)) & 0xFFFF:04x}\n")
     print("->", path)
 
     # ------------------------------------------------------------------ C ---

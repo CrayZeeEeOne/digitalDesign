@@ -6,7 +6,8 @@
 #include "app/sd_test.h"
 #include "app/sd_format.h"
 
-void view_sd(tft_t *tft, const sd_info_t *info, const sd_format_result_t *fmt);
+/* note: one line about the replay file (NULL: none). */
+void view_sd(tft_t *tft, const sd_info_t *info, const sd_format_result_t *fmt, const char *note);
 
 /* Full-screen notice while the card is being formatted. */
 void view_sd_formatting(tft_t *tft);

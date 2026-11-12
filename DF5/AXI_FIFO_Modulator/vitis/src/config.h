@@ -12,33 +12,50 @@
 #define CFG_TFT_SCLK_HZ       25000000u    /* SPI clock to the ST7789 */
 
 /*------------------------------------------------------------- signal ----*/
-/* As in the task and sim.iq (tools/iqgen.py): LO 867.4 MHz, channel 866.31 MHz,
-   i.e. the packets sit at -1.09 MHz (+3 kHz CFO) in the I/Q band. */
+/* The real capture (capture_300MB.iq, copied to the card as CFG_PLAY_FILE):
+   Pluto SDR, LO 867.4 MHz, 4.5 MS/s, int16 I/Q, 16.7 s. Alarm-Beacon GFSK
+   packets hop over the 15 channels below, one packet every ~283 ms; frame:
+   10 x 0xAA, sync 0x91D3, 16 bytes whitened with PN9, radio CRC16. */
 #define CFG_SAMPLE_RATE_HZ    4500000u     /* complex I/Q samples per second */
-#define CFG_CENTER_FREQ_HZ    867400000u   /* RF frequency of I/Q sample 0 Hz */
-#define CFG_CHANNEL_FREQ_HZ   866310000u   /* channel the demodulator tunes to */
-#define CFG_BITRATE           19200u       /* FSK symbols per second */
-#define CFG_DEVIATION_HZ      25000u       /* FSK deviation of the test generator */
-#define CFG_PKT_BYTES         48u          /* bytes after the sync word, CRC included */
+#define CFG_CENTER_FREQ_HZ    867400000u   /* RF frequency of I/Q sample 0 Hz (LO) */
+#define CFG_BITRATE           19200u       /* GFSK symbols per second */
+#define CFG_PKT_BYTES         16u          /* bytes after the sync word, CRC16 included */
 #define CFG_SYNC_WORD         0x91D3u
+#define CFG_IN_SHIFT          6u           /* input x 64: the capture peaks at ~+-104 LSB */
+#define CFG_PLAY_FILE         "CAPTURE.IQ8"  /* int8 I/Q (tools/iq16to8.py): real time */
+#define CFG_PLAY_FILE16       "CAPTURE.IQ"   /* int16, if there is no .IQ8: ~0.7x real time */
+#define CFG_PLAY_RATE         193273528u     /* 2^32 * 4.5 MS/s / 100 MHz: the replay rate */
+
+/* Hop channels, kHz, in the order the transmitter uses them. */
+#define CFG_HOP_N             15u
+#define CFG_HOP_CHANNELS_KHZ  { 865300u, 865500u, 865900u, 866100u, 866500u, 866700u, 867100u, \
+                                867300u, 867700u, 867900u, 868100u, 868300u, 868900u, 869100u, \
+                                869500u }
+
+/* Channel search in the PL (dsp_hop): a packet is a channel whose level sum over
+   3 FFT bins is above max(noise << THR_SH, MIN) for CONFIRM blocks in a row.
+   Alarm packets give sums of ~5000..8000, the noise of the capture ~1..10. */
+#define CFG_HOP_THR_SH        5u           /* x32, ~30 dB above the channel noise */
+#define CFG_HOP_MIN           256u
+#define CFG_HOP_NOISE_SH      4u
+#define CFG_HOP_CONFIRM       2u
+#define CFG_HOP_HOLD          8192u        /* samples to wait for the packet after retuning */
 
 /*--------------------------------------------------------- processing ----*/
 #define CFG_IQ_BLOCK          256u         /* samples per processing block (C model) */
-#define CFG_WARMUP_SAMPLES    16384u       /* estimators settle, not recorded */
-#define CFG_CAPTURE_SAMPLES   327680u      /* one capture: ~73 ms, two packet periods */
+#define CFG_WARMUP_SAMPLES    1u           /* the demodulator runs continuously */
+#define CFG_CAPTURE_SAMPLES   98304u       /* one capture: 21.8 ms from just before a packet */
 
-/* Spectrum: SPEC_FFT_N-point FFT, the SPEC_BINS central bins (+-1.125 MHz,
-   ~17.6 kHz per bin); levels ~16*log2(|X|), 0 dBFS = SPEC_LOG_0DBFS. One
-   waterfall row = 2^SPEC_WF_SHIFT blocks = CFG_CAPTURE_SAMPLES / 40 samples. */
+/* Spectrum: SPEC_FFT_N-point FFT over the whole band (+-2.25 MHz around the LO);
+   each of the SPEC_BINS points is the max of 2 neighbouring FFT bins (35.2 kHz).
+   Levels ~16*log2(|X|), 0 dBFS = SPEC_LOG_0DBFS. */
 #define SPEC_FFT_N            256
 #define SPEC_BINS             128
-/* The 128 bins shown are centred on the channel (not on the LO): the channel is
-   SPEC_CH_BINS bins from the LO, the window starts SPEC_BINS/2 below it. */
-#define SPEC_CH_BINS          ((int32_t)(((int64_t)CFG_CHANNEL_FREQ_HZ - (int64_t)CFG_CENTER_FREQ_HZ) * SPEC_FFT_N                                          - (int64_t)CFG_SAMPLE_RATE_HZ / 2) / (int64_t)CFG_SAMPLE_RATE_HZ)
-#define SPEC_BIN0             ((uint32_t)(SPEC_CH_BINS - SPEC_BINS / 2) & (SPEC_FFT_N - 1u))
+#define SPEC_BIN0             128u         /* first FFT bin shown: -Fs/2 */
 #define SPEC_LOG_0DBFS        224
-#define SPEC_WF_SHIFT         5
-#define CFG_LIVE_WF_SHIFT     6            /* live: one row per 64 blocks = 3.64 ms */
-#define CFG_LIVE_FRAME_MS     40u          /* live: redraw at most every 40 ms */
+#define SPEC_WF_SHIFT         6            /* capture mode (host model): one row = 64 blocks = 3.64 ms */
+#define CFG_LIVE_WF_SHIFT     11           /* play: one row = 2048 blocks = 116.5 ms, the whole
+                                              16.7 s file = 144 rows of the 256-row ring */
+#define CFG_LIVE_FRAME_MS     50u          /* redraw at most every 50 ms */
 
 #endif

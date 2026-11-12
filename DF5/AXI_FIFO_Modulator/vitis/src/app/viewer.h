@@ -1,18 +1,21 @@
 /*
  * viewer.h -- the signal viewer: the screens over the signal, in three states:
  *
- *   LIVE    real time: the PL records continuously, the screens are redrawn as
- *           fast as the TFT takes them (no zoom; K2 pauses)
- *   PAUSE   the last live picture frozen: zoom and scroll work (K1+K2: live again)
- *   STATIC  one finished capture (replay of a file from the SD card; on the PC
- *           the C model of tools/host_sim)
+ *   LIVE    the capture file plays from the SD card: spectrum and waterfall of
+ *           everything, RAW / BITS of the last packet (no zoom; K2 pauses)
+ *   PAUSE   the last picture frozen: zoom and scroll work (K1+K2: play on)
+ *   END     the file has been played to the end: everything stays as it is, zoom
+ *           and scroll work (K1+K2: the file from the start)
+ *   STATIC  one finished capture (on the PC: the C model of tools/host_sim)
  *
  * Screens:
  *   RAW I/Q    the input signal over time
- *   BITS       bits decoded from the packets (waveform, hex, CRC)
+ *   BITS       bits of the packet, its fields (channel, CRC16, CRC8, number,
+ *              alarm counter) and the receive statistics
  *   FFT        level in dBFS vs frequency, peak marker
  *   WATERFALL  frequency vs time
  *   SD CARD    result of the microSD test (app/sd_test.h)
+ *   FFT+WF     FFT and WATERFALL on one screen
  * Each plot keeps its own zoom (x1..x16) and position (app/keys.h for the keys).
  */
 #ifndef VIEWER_H
@@ -23,6 +26,7 @@
 #include "app/capture.h"
 #include "app/keys.h"
 #include "app/zoom.h"
+#include "app/rx_stats.h"
 #include "app/view_freq.h"
 #include "app/sd_test.h"
 #include "app/sd_format.h"
@@ -33,13 +37,15 @@ typedef enum {
     VIEW_FFT,
     VIEW_WATERFALL,
     VIEW_SD,
+    VIEW_FFT_WF,
     VIEW_COUNT
 } view_mode_t;
 
 typedef enum {
     VSTATE_STATIC = 0,
     VSTATE_LIVE,
-    VSTATE_PAUSE
+    VSTATE_PAUSE,
+    VSTATE_END
 } view_state_t;
 
 typedef struct {
@@ -52,6 +58,10 @@ typedef struct {
     wf_src_t wf;               /* WATERFALL rows */
     uint32_t prog_done, prog_total;   /* recording progress (STATIC) */
     const char *source;        /* where the signal comes from, shown in the header */
+    char status[16];           /* playback position, redrawn every frame */
+    uint16_t status_x;
+    const rx_stats_t *stats;   /* BITS, may be NULL */
+    const char *sd_note;       /* SD CARD screen: about the replay file, may be NULL */
     const sd_info_t *sd;       /* shown on the SD CARD screen, may be NULL */
     const sd_format_result_t *sd_fmt;
 } viewer_t;

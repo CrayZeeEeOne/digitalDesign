@@ -39,8 +39,9 @@ typedef struct {
 
 typedef struct {
     uint8_t valid;             /* the demodulator found the sync word */
-    uint8_t crc_ok;
-    uint8_t nbytes;            /* bytes after sync, CRC included */
+    uint8_t crc_ok;            /* radio CRC16 */
+    uint8_t ch;                /* hop channel index (config.h) */
+    uint8_t nbytes;            /* bytes after sync (dewhitened), CRC included */
     uint8_t bytes[CAP_DEC_BYTES];
 } cap_dec_t;
 

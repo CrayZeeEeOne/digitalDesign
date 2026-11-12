@@ -1,90 +1,53 @@
 #include "hal/sd_card.h"
 
-#define R1_IDLE       0x01u
-#define R1_ILLEGAL    0x04u
-#define TOKEN_DATA    0xFEu
+#define CLK_ID_DIV    124u        /* 100 MHz / 250 = 400 kHz: identification */
+#define CLK_DATA_DIV  1u          /* 100 MHz / 4 = 25 MHz: default speed */
+#define SDLY          2u          /* inputs read 20 ns after the rising edge */
+
+#define ST_ERRORS     0xFDF98008u /* card status: error bits of R1 */
+#define ST_LOCKED     (1u << 25)
 
 const char *sd_err_text(int err)
 {
     switch (err) {
     case SD_OK:          return "OK";
-    case SD_ERR_NO_CARD: return "NO CARD (NO ANSWER TO CMD0)";
+    case SD_ERR_NO_CARD: return "NO CARD (NO ANSWER)";
     case SD_ERR_CMD8:    return "CMD8 FAILED";
     case SD_ERR_ACMD41:  return "ACMD41 TIMEOUT";
-    case SD_ERR_CMD58:   return "CMD58 (OCR) FAILED";
+    case SD_ERR_CMD58:   return "CMD2/CMD3 FAILED";
     case SD_ERR_CSD:     return "CMD9 (CSD) FAILED";
     case SD_ERR_READ:    return "CMD17 READ FAILED";
     case SD_ERR_WRITE:   return "CMD24 WRITE FAILED";
     case SD_ERR_LOCKED:  return "CARD LOCKED (PASSWORD)";
+    case SD_ERR_SELECT:  return "CMD7/ACMD6 FAILED";
     default:             return "NOT INITIALISED";
     }
 }
 
-static uint8_t xchg(sd_card_t *sd, uint8_t b) { return axi_qspi_byte(sd->spi, b); }
-
-static void deselect(sd_card_t *sd)
+static void delay_us(uint32_t us)
 {
-    axi_qspi_select(sd->spi, 0);
-    xchg(sd, 0xFFu);            /* the card releases MISO on the next clock */
+    volatile uint32_t i;
+    while (us--)
+        for (i = 0; i < 20; i++)
+            ;
 }
 
-/* Wait until the card stops signalling busy (MISO high); a write may take ~0.5 s. */
-static int wait_ready(sd_card_t *sd)
+/* A command with a 48-bit response (CRC checked); its card status in *st. */
+static uint32_t cmd_r1(sd_card_t *sd, uint8_t idx, uint32_t arg, int busy, int data, uint32_t *st)
 {
-    uint32_t n;
-    for (n = 0u; n < 500000u; n++)
-        if (xchg(sd, 0xFFu) == 0xFFu) return 1;
-    return 0;
+    uint32_t e = sd_host_cmd(sd->host, idx, arg, SDH_RSP_48, busy, 1, data);
+    *st = sd_host_resp(sd->host, 0);
+    sd->last_r1 = e ? 0xFFu : (uint8_t)(*st >> 8);   /* FF: no answer */
+    return e;
 }
 
-/* Send a command, return R1 (0xFF = no answer). Leaves the card selected. */
-static uint8_t command(sd_card_t *sd, uint8_t cmd, uint32_t arg)
+static uint32_t acmd(sd_card_t *sd, uint8_t idx, uint32_t arg, int crc, uint32_t *st)
 {
-    uint8_t frame[6];
-    uint8_t r1 = 0xFFu;
-    uint8_t n;
-
-    if (cmd & 0x80u) {          /* ACMDn = CMD55 + CMDn */
-        cmd &= 0x7Fu;
-        r1 = command(sd, 55u, 0u);
-        if (r1 > R1_IDLE) return r1;
-    }
-
-    deselect(sd);
-    axi_qspi_select(sd->spi, 1);
-    if (cmd != 0u) wait_ready(sd);
-
-    frame[0] = (uint8_t)(0x40u | cmd);
-    frame[1] = (uint8_t)(arg >> 24);
-    frame[2] = (uint8_t)(arg >> 16);
-    frame[3] = (uint8_t)(arg >> 8);
-    frame[4] = (uint8_t)arg;
-    frame[5] = (cmd == 0u) ? 0x95u : (cmd == 8u) ? 0x87u : 0x01u;   /* CRC needed only before CMD59 */
-    axi_qspi_xfer(sd->spi, frame, 0, 6u);
-
-    for (n = 0u; n < 10u; n++) {
-        r1 = xchg(sd, 0xFFu);
-        if (!(r1 & 0x80u)) break;
-    }
-    sd->last_r1 = r1;
-    return r1;
-}
-
-/* Read a data block of len bytes after a command (data token + data + CRC). */
-static int read_data(sd_card_t *sd, uint8_t *buf, uint32_t len)
-{
-    uint32_t n;
-    uint8_t t = 0xFFu;
-
-    for (n = 0u; n < 100000u; n++) {
-        t = xchg(sd, 0xFFu);
-        if (t != 0xFFu) break;
-    }
-    if (t != TOKEN_DATA) return 0;
-    axi_qspi_xfer(sd->spi, 0, buf, len);
-    xchg(sd, 0xFFu);            /* CRC, not checked */
-    xchg(sd, 0xFFu);
-    return 1;
+    uint32_t e = cmd_r1(sd, 55u, (uint32_t)sd->rca << 16, 0, SDH_DATA_NONE, st);
+    if (e) return e;
+    e = sd_host_cmd(sd->host, idx, arg, SDH_RSP_48, 0, crc, SDH_DATA_NONE);
+    *st = sd_host_resp(sd->host, 0);
+    return e;
 }
 
 static uint32_t csd_bits(const uint8_t *csd, uint32_t msb, uint32_t width)
@@ -97,60 +60,68 @@ static uint32_t csd_bits(const uint8_t *csd, uint32_t msb, uint32_t width)
     return v;
 }
 
-int sd_init(sd_card_t *sd, axi_qspi_t *spi)
+uint32_t sd_addr(const sd_card_t *sd, uint32_t lba)
 {
-    uint8_t r1, r7[4];
-    uint32_t n;
+    return (sd->type == SD_TYPE_SDHC) ? lba : lba * SD_BLOCK;
+}
+
+int sd_init(sd_card_t *sd, sd_host_t *host)
+{
+    uint32_t st, n, w;
     int err = SD_OK;
 
-    sd->spi = spi;
+    sd->host = host;
     sd->type = SD_TYPE_NONE;
     sd->sectors = 0u;
     sd->ocr = 0u;
+    sd->rca = 0u;
+    sd->last_r1 = 0xFFu;
 
-    axi_qspi_select(spi, 0);
-    for (n = 0u; n < 10u; n++) xchg(sd, 0xFFu);     /* >= 74 clocks with CS high */
+    sd_host_stream_stop(host);
+    sd_host_clock(host, CLK_ID_DIV, SDLY, 1);
+    delay_us(1000);                                  /* >= 74 clocks at 400 kHz */
+    sd_host_clock(host, CLK_ID_DIV, SDLY, 0);
 
-    /* CMD0: go idle (SPI mode) */
-    for (n = 0u; n < 10u; n++) {
-        r1 = command(sd, 0u, 0u);
-        if (r1 == R1_IDLE) break;
-    }
-    if (r1 != R1_IDLE) { err = SD_ERR_NO_CARD; goto out; }
+    (void)sd_host_cmd(host, 0u, 0u, SDH_RSP_NONE, 0, 0, SDH_DATA_NONE);   /* CMD0: idle */
 
-    /* CMD8: voltage check, tells SD v2 from v1 */
-    r1 = command(sd, 8u, 0x1AAu);
-    if (r1 == R1_IDLE) {
-        axi_qspi_xfer(spi, 0, r7, 4u);
-        if (r7[2] != 0x01u || r7[3] != 0xAAu) { err = SD_ERR_CMD8; goto out; }
+    /* CMD8: voltage check, answered only by SD v2 cards */
+    if (sd_host_cmd(host, 8u, 0x1AAu, SDH_RSP_48, 0, 1, SDH_DATA_NONE) == 0u) {
+        if ((sd_host_resp(host, 0) & 0xFFFu) != 0x1AAu) { err = SD_ERR_CMD8; goto out; }
         sd->type = SD_TYPE_V2_SC;
-    } else if (r1 & R1_ILLEGAL) {
-        sd->type = SD_TYPE_V1;
     } else {
-        err = SD_ERR_CMD8; goto out;
+        sd->type = SD_TYPE_V1;
     }
 
-    /* ACMD41: start initialisation, HCS set for v2 cards; up to ~1 s */
-    for (n = 0u; n < 40000u; n++) {
-        r1 = command(sd, 0x80u | 41u, (sd->type == SD_TYPE_V2_SC) ? 0x40000000u : 0u);
-        if (r1 == 0u) break;
+    /* ACMD41: start initialisation (HCS for v2); OCR in R3, no CRC; up to ~1 s */
+    for (n = 0u; n < 2000u; n++) {
+        if (acmd(sd, 41u, (sd->type == SD_TYPE_V2_SC ? 0x40000000u : 0u) | 0x00FF8000u, 0, &st)) {
+            err = SD_ERR_NO_CARD;
+            goto out;
+        }
+        if (st & 0x80000000u) break;
+        delay_us(500);
     }
-    if (r1 != 0u) { err = SD_ERR_ACMD41; goto out; }
+    if (!(st & 0x80000000u)) { err = SD_ERR_ACMD41; goto out; }
+    sd->ocr = st;
+    if (sd->type == SD_TYPE_V2_SC && (st & 0x40000000u)) sd->type = SD_TYPE_SDHC;
 
-    /* CMD58: OCR, CCS bit = block addressing (SDHC/SDXC) */
-    if (sd->type == SD_TYPE_V2_SC) {
-        if (command(sd, 58u, 0u) != 0u) { err = SD_ERR_CMD58; goto out; }
-        axi_qspi_xfer(spi, 0, r7, 4u);
-        sd->ocr = ((uint32_t)r7[0] << 24) | ((uint32_t)r7[1] << 16) | ((uint32_t)r7[2] << 8) | r7[3];
-        if (sd->ocr & 0x40000000u) sd->type = SD_TYPE_SDHC;
+    /* CMD2: CID; CMD3: relative address */
+    if (sd_host_cmd(host, 2u, 0u, SDH_RSP_136, 0, 0, SDH_DATA_NONE)) { err = SD_ERR_CMD58; goto out; }
+    if (cmd_r1(sd, 3u, 0u, 0, SDH_DATA_NONE, &st)) { err = SD_ERR_CMD58; goto out; }
+    sd->rca = (uint16_t)(st >> 16);
+
+    /* CMD9: CSD -> capacity (bits 127..0 in the response words 3..0) */
+    if (sd_host_cmd(host, 9u, (uint32_t)sd->rca << 16, SDH_RSP_136, 0, 0, SDH_DATA_NONE)) {
+        err = SD_ERR_CSD;
+        goto out;
     }
-    if (sd->type != SD_TYPE_SDHC) command(sd, 16u, SD_BLOCK);   /* 512-byte blocks */
-
-    /* CMD13: R2, second byte bit 0 = card is locked */
-    if (command(sd, 13u, 0u) == 0u && (xchg(sd, 0xFFu) & 0x01u)) { err = SD_ERR_LOCKED; goto out; }
-
-    /* CMD9: CSD -> capacity */
-    if (command(sd, 9u, 0u) != 0u || !read_data(sd, sd->csd, 16u)) { err = SD_ERR_CSD; goto out; }
+    for (w = 0u; w < 4u; w++) {
+        uint32_t v = sd_host_resp(host, 3 - (int)w);
+        sd->csd[4u * w + 0u] = (uint8_t)(v >> 24);
+        sd->csd[4u * w + 1u] = (uint8_t)(v >> 16);
+        sd->csd[4u * w + 2u] = (uint8_t)(v >> 8);
+        sd->csd[4u * w + 3u] = (uint8_t)v;
+    }
     if ((sd->csd[0] >> 6) == 1u) {                  /* CSD v2: (C_SIZE + 1) * 512 KB */
         sd->sectors = (csd_bits(sd->csd, 69u, 22u) + 1u) * 1024u;
     } else {                                        /* CSD v1 */
@@ -160,38 +131,58 @@ int sd_init(sd_card_t *sd, axi_qspi_t *spi)
         sd->sectors = ((c_size + 1u) << (mult + 2u + bl_len)) / SD_BLOCK;
     }
 
+    /* CMD7: select (transfer state), R1b */
+    if (cmd_r1(sd, 7u, (uint32_t)sd->rca << 16, 1, SDH_DATA_NONE, &st)) { err = SD_ERR_SELECT; goto out; }
+    /* CMD13: status, bit 25 = locked by password */
+    if (cmd_r1(sd, 13u, (uint32_t)sd->rca << 16, 0, SDH_DATA_NONE, &st) == 0u && (st & ST_LOCKED)) {
+        err = SD_ERR_LOCKED;
+        goto out;
+    }
+    /* ACMD6: 4-bit bus */
+    if (acmd(sd, 6u, 2u, 1, &st) || (st & ST_ERRORS)) { err = SD_ERR_SELECT; goto out; }
+    if (sd->type != SD_TYPE_SDHC) (void)cmd_r1(sd, 16u, SD_BLOCK, 0, SDH_DATA_NONE, &st);
+
+    sd_host_clock(host, CLK_DATA_DIV, SDLY, 0);
+
 out:
-    deselect(sd);
     if (err != SD_OK) sd->type = SD_TYPE_NONE;
     return err;
 }
 
 int sd_read(sd_card_t *sd, uint32_t lba, uint8_t *buf)
 {
-    int ok;
+    uint32_t st;
 
     if (sd->type == SD_TYPE_NONE) return SD_ERR_NOT_INIT;
-    ok = command(sd, 17u, (sd->type == SD_TYPE_SDHC) ? lba : lba * SD_BLOCK) == 0u
-         && read_data(sd, buf, SD_BLOCK);
-    deselect(sd);
-    return ok ? SD_OK : SD_ERR_READ;
+    if (cmd_r1(sd, 17u, sd_addr(sd, lba), 0, SDH_DATA_READ, &st) || (st & ST_ERRORS)) return SD_ERR_READ;
+    sd_host_buf_read(sd->host, buf);
+    return SD_OK;
+}
+
+int sd_read_multi(sd_card_t *sd, uint32_t lba, uint8_t *buf, uint32_t count)
+{
+    for (; count; count--, lba++, buf += SD_BLOCK) {
+        int e = sd_read(sd, lba, buf);
+        if (e) return e;
+    }
+    return SD_OK;
 }
 
 int sd_write(sd_card_t *sd, uint32_t lba, const uint8_t *buf)
 {
-    uint8_t resp;
-    int ok = 0;
+    uint32_t st;
 
     if (sd->type == SD_TYPE_NONE) return SD_ERR_NOT_INIT;
-    if (command(sd, 24u, (sd->type == SD_TYPE_SDHC) ? lba : lba * SD_BLOCK) == 0u) {
-        xchg(sd, 0xFFu);                            /* one byte gap before the token */
-        xchg(sd, TOKEN_DATA);
-        axi_qspi_xfer(sd->spi, buf, 0, SD_BLOCK);
-        xchg(sd, 0xFFu);                            /* CRC, ignored in SPI mode */
-        xchg(sd, 0xFFu);
-        resp = xchg(sd, 0xFFu);                     /* data response: xxx0 0101 = accepted */
-        ok = ((resp & 0x1Fu) == 0x05u) && wait_ready(sd);
+    sd_host_buf_write(sd->host, buf);
+    if (cmd_r1(sd, 24u, sd_addr(sd, lba), 0, SDH_DATA_WRITE, &st) || (st & ST_ERRORS)) return SD_ERR_WRITE;
+    return SD_OK;
+}
+
+int sd_write_multi(sd_card_t *sd, uint32_t lba, const uint8_t *buf, uint32_t count)
+{
+    for (; count; count--, lba++, buf += SD_BLOCK) {
+        int e = sd_write(sd, lba, buf);
+        if (e) return e;
     }
-    deselect(sd);
-    return ok ? SD_OK : SD_ERR_WRITE;
+    return SD_OK;
 }

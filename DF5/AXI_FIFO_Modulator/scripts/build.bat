@@ -7,6 +7,7 @@ REM   build.bat -syn       run synthesis
 REM   build.bat -impl      run implementation + bitstream
 REM   build.bat -xsa       export XSA to vitis\platform\
 REM   build.bat -all       run all stages
+REM   build.bat -bd        rebuild the Block Design from create_bd.tcl, then all stages
 REM   build.bat -sim       run testbench simulation
 REM   build.bat -gui       open project in Vivado GUI
 REM   build.bat -board     full flow + firmware (build_elf.bat) + load bit and ELF over JTAG
@@ -79,6 +80,9 @@ if "%1"=="-impl" set STAGE=impl
 if "%1"=="-bit"  set STAGE=bit
 if "%1"=="-xsa"  set STAGE=xsa
 if "%1"=="-all"  set STAGE=all
+set BD=
+if "%1"=="-bd"   set STAGE=all
+if "%1"=="-bd"   set BD=bd
 
 if "%STAGE%"=="" (
     vivado -mode batch -notrace -source "%SCRIPT_DIR%build.tcl"
@@ -87,5 +91,5 @@ if "%STAGE%"=="" (
 
 vivado -mode batch -notrace ^
        -source "%SCRIPT_DIR%run_stage.tcl" ^
-       -tclargs %STAGE%
+       -tclargs %STAGE% %BD%
 exit /b %errorlevel%

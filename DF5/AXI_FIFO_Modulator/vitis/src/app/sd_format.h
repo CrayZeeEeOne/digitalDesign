@@ -19,7 +19,7 @@ typedef struct {
     uint32_t ms;               /* time spent in f_mkfs */
 } sd_format_result_t;
 
-void sd_format_run(sd_format_result_t *r, sd_card_t *sd, axi_qspi_t *spi,
+void sd_format_run(sd_format_result_t *r, sd_card_t *sd, sd_host_t *host,
                    uint32_t (*ticks)(void), uint32_t ticks_hz);
 
 const char *sd_fresult_text(int fr);

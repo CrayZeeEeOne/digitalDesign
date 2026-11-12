@@ -1,7 +1,7 @@
 #==============================================================================
 # create_bd.tcl -- Block Design "microblaze" (MicroBlaze, 64 KB LMB, tft_top,
-# system_ctrl_top, AXI Quad SPI for the microSD card, iq_stream_top -> dsp_top:
-# I/Q FIFO and the whole DSP in RTL). Згенеровано write_bd_tcl з робочого BD; build.tcl викликає
+# system_ctrl_top, sd_host_top -> dsp_top: the microSD card on the native 4-bit
+# bus streams the I/Q file straight into the whole DSP in RTL). Згенеровано write_bd_tcl з робочого BD; build.tcl викликає
 # його, коли збереженого .bd у vivado/sources/bd/ немає (тобто на чистому клоні).
 # Після змін BD у GUI перегенеруй: write_bd_tcl -force -no_project_wrapper.
 #==============================================================================
@@ -10,7 +10,7 @@
 proc cr_bd_microblaze { parentCell } {
 # The design that will be created by this Tcl proc contains the following 
 # module references:
-# tft_top, system_ctrl_top, iq_stream_top, dsp_top
+# tft_top, system_ctrl_top, sd_host_top, dsp_top
 
 
 
@@ -90,7 +90,6 @@ current_bd_design $design_name
   xilinx.com:ip:microblaze:11.0\
   xilinx.com:ip:mdm:3.2\
   xilinx.com:ip:clk_wiz:6.0\
-  xilinx.com:ip:axi_quad_spi:3.2\
   xilinx.com:ip:proc_sys_reset:5.0\
   xilinx.com:ip:xlconstant:1.1\
   xilinx.com:ip:lmb_v10:3.0\
@@ -283,10 +282,9 @@ proc create_hier_cell_microblaze_0_local_memory { parentCell nameHier } {
   set btn1_n [ create_bd_port -dir I btn1_n ]
   set btn2_n [ create_bd_port -dir I btn2_n ]
   # microSD in SPI mode: SD_CLK, SD_CMD (MOSI), SD_DATA0 (MISO), SD_DATA3 (CS)
-  set sd_sck [ create_bd_port -dir O sd_sck ]
-  set sd_mosi [ create_bd_port -dir O sd_mosi ]
-  set sd_miso [ create_bd_port -dir I sd_miso ]
-  set sd_cs_n [ create_bd_port -dir O -from 0 -to 0 sd_cs_n ]
+  set sd_clk [ create_bd_port -dir O sd_clk ]
+  set sd_cmd [ create_bd_port -dir IO sd_cmd ]
+  set sd_dat [ create_bd_port -dir IO -from 3 -to 0 sd_dat ]
   set led1 [ create_bd_port -dir O led1 ]
   set led2 [ create_bd_port -dir O led2 ]
 
@@ -342,20 +340,21 @@ proc create_hier_cell_microblaze_0_local_memory { parentCell nameHier } {
   
   # Create instance: axi_interconnect_0, and set properties
   set axi_interconnect_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect:2.1 axi_interconnect_0 ]
-  set_property CONFIG.NUM_MI {5} $axi_interconnect_0
+  set_property CONFIG.NUM_MI {4} $axi_interconnect_0
 
-  # Create instance: iq_stream_top_0 (I/Q FIFO: MicroBlaze writes samples, M_AXIS -> dsp_top)
-  set block_name iq_stream_top
-  set block_cell_name iq_stream_top_0
-  if { [catch {set iq_stream_top_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
+  # Create instance: sd_host_top_0 (microSD, native 4-bit bus: commands for FatFs,
+  # file stream at 4.5 MS/s on M_AXIS -> dsp_top)
+  set block_name sd_host_top
+  set block_cell_name sd_host_top_0
+  if { [catch {set sd_host_top_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
      catch {common::send_gid_msg -ssname BD::TCL -id 2095 -severity "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
      return 1
-   } elseif { $iq_stream_top_0 eq "" } {
+   } elseif { $sd_host_top_0 eq "" } {
      catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
      return 1
    }
 
-  # Create instance: dsp_top_0 (test generator, demodulator, FFT/waterfall, capture)
+  # Create instance: dsp_top_0 (hop search, demodulator, FFT/waterfall, capture)
   set block_name dsp_top
   set block_cell_name dsp_top_0
   if { [catch {set dsp_top_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
@@ -365,20 +364,6 @@ proc create_hier_cell_microblaze_0_local_memory { parentCell nameHier } {
      catch {common::send_gid_msg -ssname BD::TCL -id 2096 -severity "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
      return 1
    }
-
-  # Create instance: axi_quad_spi_0 (SD card). Standard SPI, ext_spi_clk = AXI clock
-  # (PG153: in standard mode ext_spi_clk must not be slower than the AXI clock),
-  # SCK = 100 MHz / 16 = 6.25 MHz (16 is the largest ratio the core allows; the card
-  # identification is specified at <= 400 kHz but cards accept it at this rate).
-  set axi_quad_spi_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_quad_spi:3.2 axi_quad_spi_0 ]
-  set_property -dict [list \
-    CONFIG.C_SPI_MODE {0} \
-    CONFIG.C_USE_STARTUP {0} \
-    CONFIG.C_SCK_RATIO {16} \
-    CONFIG.C_NUM_SS_BITS {1} \
-    CONFIG.C_FIFO_DEPTH {16} \
-  ] $axi_quad_spi_0
-
 
   # Create instance: xlconstant_0, and set properties
   set xlconstant_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 xlconstant_0 ]
@@ -426,10 +411,9 @@ proc create_hier_cell_microblaze_0_local_memory { parentCell nameHier } {
   # Create interface connections
   connect_bd_intf_net -intf_net axi_interconnect_0_M00_AXI [get_bd_intf_pins axi_interconnect_0/M00_AXI] [get_bd_intf_pins tft_top_0/s_axi]
   connect_bd_intf_net -intf_net axi_interconnect_0_M01_AXI [get_bd_intf_pins axi_interconnect_0/M01_AXI] [get_bd_intf_pins system_ctrl_top_0/s_axi]
-  connect_bd_intf_net -intf_net axi_interconnect_0_M02_AXI [get_bd_intf_pins axi_interconnect_0/M02_AXI] [get_bd_intf_pins axi_quad_spi_0/AXI_LITE]
-  connect_bd_intf_net -intf_net axi_interconnect_0_M03_AXI [get_bd_intf_pins axi_interconnect_0/M03_AXI] [get_bd_intf_pins iq_stream_top_0/s_axi]
-  connect_bd_intf_net -intf_net axi_interconnect_0_M04_AXI [get_bd_intf_pins axi_interconnect_0/M04_AXI] [get_bd_intf_pins dsp_top_0/s_axi]
-  connect_bd_intf_net -intf_net iq_stream_top_0_M_AXIS [get_bd_intf_pins iq_stream_top_0/M_AXIS] [get_bd_intf_pins dsp_top_0/S_AXIS]
+  connect_bd_intf_net -intf_net axi_interconnect_0_M02_AXI [get_bd_intf_pins axi_interconnect_0/M02_AXI] [get_bd_intf_pins sd_host_top_0/s_axi]
+  connect_bd_intf_net -intf_net axi_interconnect_0_M03_AXI [get_bd_intf_pins axi_interconnect_0/M03_AXI] [get_bd_intf_pins dsp_top_0/s_axi]
+  connect_bd_intf_net -intf_net sd_host_top_0_M_AXIS [get_bd_intf_pins sd_host_top_0/M_AXIS] [get_bd_intf_pins dsp_top_0/S_AXIS]
   connect_bd_intf_net -intf_net diff_clock_rtl_0_1 [get_bd_intf_ports clk_200_p] [get_bd_intf_pins clk_wiz_1/CLK_IN1_D]
   connect_bd_intf_net -intf_net microblaze_0_M_AXI_DP [get_bd_intf_pins microblaze_0/M_AXI_DP] [get_bd_intf_pins axi_interconnect_0/S00_AXI]
   connect_bd_intf_net -intf_net microblaze_0_debug [get_bd_intf_pins mdm_1/MBDEBUG_0] [get_bd_intf_pins microblaze_0/DEBUG]
@@ -453,14 +437,11 @@ proc create_hier_cell_microblaze_0_local_memory { parentCell nameHier } {
   [get_bd_pins tft_top_0/s_axi_aclk] \
   [get_bd_pins axi_interconnect_0/M00_ACLK] \
   [get_bd_pins axi_interconnect_0/M01_ACLK] \
-  [get_bd_pins axi_interconnect_0/M02_ACLK]   [get_bd_pins axi_interconnect_0/M03_ACLK]   [get_bd_pins axi_interconnect_0/M04_ACLK]   [get_bd_pins iq_stream_top_0/s_axi_aclk]   [get_bd_pins dsp_top_0/s_axi_aclk] \
-  [get_bd_pins axi_quad_spi_0/s_axi_aclk] \
-  [get_bd_pins axi_quad_spi_0/ext_spi_clk] \
+  [get_bd_pins axi_interconnect_0/M02_ACLK]   [get_bd_pins axi_interconnect_0/M03_ACLK]   [get_bd_pins sd_host_top_0/s_axi_aclk]   [get_bd_pins dsp_top_0/s_axi_aclk] \
   [get_bd_pins system_ctrl_top_0/s_axi_aclk]
-  connect_bd_net -net axi_quad_spi_0_sck_o  [get_bd_pins axi_quad_spi_0/sck_o] [get_bd_ports sd_sck]
-  connect_bd_net -net axi_quad_spi_0_io0_o  [get_bd_pins axi_quad_spi_0/io0_o] [get_bd_ports sd_mosi]
-  connect_bd_net -net sd_miso_1  [get_bd_ports sd_miso] [get_bd_pins axi_quad_spi_0/io1_i]
-  connect_bd_net -net axi_quad_spi_0_ss_o  [get_bd_pins axi_quad_spi_0/ss_o] [get_bd_ports sd_cs_n]
+  connect_bd_net -net sd_host_top_0_sd_clk  [get_bd_pins sd_host_top_0/sd_clk] [get_bd_ports sd_clk]
+  connect_bd_net -net sd_cmd_net  [get_bd_pins sd_host_top_0/sd_cmd] [get_bd_ports sd_cmd]
+  connect_bd_net -net sd_dat_net  [get_bd_pins sd_host_top_0/sd_dat] [get_bd_ports sd_dat]
   connect_bd_net -net system_ctrl_top_0_led1  [get_bd_pins system_ctrl_top_0/led1] [get_bd_ports led1]
   connect_bd_net -net system_ctrl_top_0_led2  [get_bd_pins system_ctrl_top_0/led2] [get_bd_ports led2]
   connect_bd_net -net rst_clk_wiz_1_100M_bus_struct_reset  [get_bd_pins rst_clk_wiz_1_100M/bus_struct_reset]
@@ -490,8 +471,7 @@ proc create_hier_cell_microblaze_0_local_memory { parentCell nameHier } {
   [get_bd_pins axi_interconnect_0/S00_ARESETN] \
   [get_bd_pins axi_interconnect_0/M00_ARESETN] \
   [get_bd_pins axi_interconnect_0/M01_ARESETN] \
-  [get_bd_pins axi_interconnect_0/M02_ARESETN]   [get_bd_pins axi_interconnect_0/M03_ARESETN]   [get_bd_pins axi_interconnect_0/M04_ARESETN]   [get_bd_pins iq_stream_top_0/s_axi_aresetn]   [get_bd_pins dsp_top_0/s_axi_aresetn] \
-  [get_bd_pins axi_quad_spi_0/s_axi_aresetn] \
+  [get_bd_pins axi_interconnect_0/M02_ARESETN]   [get_bd_pins axi_interconnect_0/M03_ARESETN]   [get_bd_pins sd_host_top_0/s_axi_aresetn]   [get_bd_pins dsp_top_0/s_axi_aresetn] \
   [get_bd_pins tft_top_0/s_axi_aresetn] \
   [get_bd_pins system_ctrl_top_0/s_axi_aresetn]
   connect_bd_net -net xlconstant_rst0_dout  [get_bd_pins xlconstant_rst0/dout]
@@ -501,9 +481,8 @@ proc create_hier_cell_microblaze_0_local_memory { parentCell nameHier } {
 
   # Create address segments
   assign_bd_address -offset 0x00000000 -range 0x00010000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs microblaze_0_local_memory/dlmb_bram_if_cntlr/SLMB/Mem] -force
-  assign_bd_address -offset 0x44A20000 -range 0x00010000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs axi_quad_spi_0/AXI_LITE/Reg] -force
+  assign_bd_address -offset 0x44A20000 -range 0x00010000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs sd_host_top_0/s_axi/reg0] -force
   assign_bd_address -offset 0x44A10000 -range 0x00010000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs system_ctrl_top_0/s_axi/reg0] -force
-  assign_bd_address -offset 0x44A30000 -range 0x00010000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs iq_stream_top_0/s_axi/reg0] -force
   assign_bd_address -offset 0x44A40000 -range 0x00010000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs dsp_top_0/s_axi/reg0] -force
   assign_bd_address -offset 0x00010000 -range 0x00001000 -target_address_space [get_bd_addr_spaces microblaze_0/Data] [get_bd_addr_segs tft_top_0/s_axi/reg0] -force
   assign_bd_address -offset 0x00000000 -range 0x00010000 -target_address_space [get_bd_addr_spaces microblaze_0/Instruction] [get_bd_addr_segs microblaze_0_local_memory/ilmb_bram_if_cntlr/SLMB/Mem] -force

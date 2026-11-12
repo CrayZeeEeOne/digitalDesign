@@ -25,6 +25,7 @@ static tft_t tft;
 static src_synth_t synth;
 static capture_model_t model;
 static viewer_t viewer;
+static rx_stats_t stats;
 static int16_t iq[CFG_IQ_BLOCK * 2u];
 
 static int save_ppm(const char *path)
@@ -68,7 +69,7 @@ static int check_bits(const cap_pkt_t *p, int idx)
     return (int)best_err;
 }
 
-static axi_qspi_t sd_spi;
+static sd_host_t sd_host;
 static sd_card_t sd;
 static sd_info_t sd_info;
 static uint32_t host_ticks(void) { static uint32_t t; return t += 1000u; }
@@ -111,10 +112,24 @@ int main(int argc, char **argv)
         capture_model_block(&model, iq, CFG_IQ_BLOCK);
         blocks++;
     }
+    /* The C model has no demodulator after sync: show the first packet as the PL
+       decodes it -- a real alarm frame of the capture (vivado/sources/sim_data/hop.iq.json) */
+    if (model.d.npkt) {
+        static const uint8_t alarm[16] = { 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00, 0xE9, 0x0D,
+                                           0x1F, 0xE9, 0x07, 0x04, 0x00, 0x66, 0xF6, 0x1A };
+        cap_dec_t *d = &model.d.dec[0];
+        d->valid = d->crc_ok = 1u;
+        d->ch = 5u;
+        d->nbytes = 16u;
+        for (m = 0; m < 16; m++) d->bytes[m] = alarm[m];
+        model.d.ndec = 1u;
+    }
+    stats.rx = 23u; stats.crc16 = 23u; stats.crc8 = 23u; stats.hop_ok = 22u; stats.hop_n = 22u;
+    viewer.stats = &stats;
     viewer_use_capture(&viewer, &model.d);
     /* SD CARD screen: the card as the stub bus sees it (no card) */
-    axi_qspi_init(&sd_spi, 0u);
-    sd_test_run(&sd_info, &sd, &sd_spi, host_ticks, 1000000u);
+    sd_host_init(&sd_host, 0u);
+    sd_test_run(&sd_info, &sd, &sd_host, host_ticks, 1000000u);
     viewer.sd = &sd_info;
 
     printf("capture: %d blocks, %u packets, panel %ux%u\n",

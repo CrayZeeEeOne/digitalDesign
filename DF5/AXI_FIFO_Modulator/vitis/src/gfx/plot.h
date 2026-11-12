@@ -78,7 +78,7 @@ void plot_col_send(tft_t *tft, uint16_t x, uint16_t y0, const plot_col_t *c);
 typedef union {
     plot_col_t col;                                  /* RAW, BITS */
     struct { uint8_t t_lo[PLOT_MAX_W], t_hi[PLOT_MAX_W]; uint16_t line[PLOT_MAX_W]; } fft;
-    struct { uint16_t lut[256]; uint16_t line[PLOT_MAX_W]; uint8_t xbin[PLOT_MAX_W]; } wf;
+    struct { uint16_t lut[256]; uint16_t line[PLOT_MAX_W]; uint8_t xbin[PLOT_MAX_W]; uint8_t cm[128]; } wf;
 } plot_scratch_t;
 
 extern plot_scratch_t plot_scratch;

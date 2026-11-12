@@ -7,9 +7,9 @@
 // якому хоч один відлік записувався захопленням (in_rec), обробляється:
 //
 //   вікно Ханна (fft_hann256.mem) -> FFT-256 radix-2, кожна стадія /2
-//   (twiddle з fft_tw128.mem -- пораховані як sin_q15() у C) -> |re| + |im| 128 бінів
-//   вікна від cfg_bin0 (192 -- центральні, інакше вікно навколо каналу)
-//   бінів -> накопичення; кожні 2^cfg_wf_shift блоків -> рядок waterfall
+//   (twiddle з fft_tw128.mem -- пораховані як sin_q15() у C) -> |re| + |im| усіх 256
+//   бінів від cfg_bin0 (128 = від -Fs/2), пара сусідніх -> max -> 128 точок на
+//   всю смугу -> накопичення; кожні 2^cfg_wf_shift блоків -> рядок waterfall
 //   spec_log(acc >> cfg_wf_shift) (~16*log2). Max hold по рядках рахує софт
 //   (40 x 128 порівнянь), у залізі він не потрібен.
 //
@@ -22,8 +22,15 @@
 //   live (cfg_live = 1)        кожен блок потоку; рядки йдуть по колу без кінця,
 //                              st_rows -- скільки всього записано (рядок
 //                              st_rows-1 -- найсвіжіший, у кільці на st_rows % WF_RING)
-// FFT: 8 стадій x 128 метеликів по 2 такти + дренаж -> ~2.1 тис. тактів на
-// блок. Якщо наступний блок прийшов раніше, ніж FFT закінчив, in_ready = 0.
+// cfg_freeze: кільце більше не пишеться (картинка всього файлу лишається), але
+// кожен рядок, як і раніше, кладеться в буфер останнього рядка (live-FFT).
+//
+// Канали: карта бін -> канал (chmap, 256 x 4 біт, 15 = жоден, пише софт);
+// для кожного обробленого блоку ch_pow[c] = сума |re|+|im| бінів каналу c,
+// ch_done -- строб, коли суми готові (по них dsp_hop шукає пакет).
+//
+// FFT: 8 стадій x 128 метеликів по 2 такти + 256 тактів виходу -> ~2.4 тис.
+// тактів на блок. Якщо наступний блок прийшов раніше, ніж FFT закінчив, in_ready = 0.
 //==============================================================================
 module dsp_spectrum #(
   parameter int WF_ROWS   = 40,                 // рядків одного захоплення
@@ -36,8 +43,9 @@ module dsp_spectrum #(
 
   input  logic               arm,            // нове захоплення: обнулити накопичення
   input  logic               cfg_live,       // спектр усього потоку, кільце рядків
-  input  logic [7:0]         cfg_bin0,       // перший бін вікна з 128 (192 = центр, +-Fs/4)
+  input  logic [7:0]         cfg_bin0,       // перший з 256 бінів виходу (128 = від -Fs/2)
   input  logic [4:0]         cfg_wf_shift,   // блоків на рядок = 2^cfg_wf_shift
+  input  logic               cfg_freeze,     // кільце не пишеться
 
   input  logic               in_valid,       // прийнятий відлік потоку
   input  logic               in_rec,         // цей відлік записується захопленням
@@ -48,10 +56,19 @@ module dsp_spectrum #(
   output logic [31:0]        st_rows,        // записано рядків (live: усього)
   output logic               st_busy,
 
+  // канали
+  input  logic               chmap_we,       // карта бін -> канал (з AXI)
+  input  logic [7:0]         chmap_addr,     // бін FFT (натуральний індекс 0..255)
+  input  logic [3:0]         chmap_data,     // канал 0..14, 15 = жоден
+  output logic [23:0]        ch_pow [0:14],  // сума рівнів бінів каналу в останньому блоці
+  output logic               ch_done,        // строб: ch_pow оновлено
+
   // читання з AXI (синхронне: дані наступного такту)
   input  logic               rd_en,
   input  logic [12:0]        rd_wf_addr,     // слово: рядок кільця*32 + бін/4
-  output logic [31:0]        rd_wf_data      // біни 4w..4w+3, молодший -- у [7:0]
+  output logic [31:0]        rd_wf_data,     // біни 4w..4w+3, молодший -- у [7:0]
+  input  logic [4:0]         rd_last_addr,   // слово останнього рядка
+  output logic [31:0]        rd_last_data
 );
 
   //---------------------------------------------------------- таблиці -----
@@ -187,7 +204,7 @@ module dsp_spectrum #(
   //----------------------------------------------------------- FFT ---------
   typedef enum logic [2:0] {F_IDLE, F_RUN, F_DRAIN, F_OUT, F_OUT_DRAIN} fst_t;
   fst_t fst;
-  logic [6:0] o_n;                             // бін, що читається (F_OUT)
+  logic [7:0] o_n;                             // бін, що читається (F_OUT)
 
   logic [2:0] stage;                           // 0..7: len = 2 << stage
   logic [6:0] bfly;                            // 0..127
@@ -227,7 +244,7 @@ module dsp_spectrum #(
   logic signed [15:0] m_ra, m_ia;
   logic [31:0]        s_new_a, s_new_b;
 
-  wire [7:0] o_addr = 8'(o_n) + cfg_bin0;       // бін k = (n + bin0) & 255
+  wire [7:0] o_addr = o_n + cfg_bin0;           // бін k = (n + bin0) & 255
   assign a_raddr = (fst == F_OUT) ? o_addr : ba;
   assign b_raddr = bb;
 
@@ -249,9 +266,16 @@ module dsp_spectrum #(
 
   // читання результату
   logic        o1_v, o2_v;
-  logic [6:0]  o1_n, o2_n;
-  logic [16:0] o_mag;
+  logic [7:0]  o1_n, o2_n;
+  logic [7:0]  o1_k;                           // бін FFT, дані якого прийшли в o1
+  logic [16:0] m_even;                         // перший бін пари
   logic [31:0] o_sum;
+
+  // карта каналів і суми
+  logic [3:0]  chmap [0:255];
+  logic [23:0] chacc [0:14];
+  always_ff @(posedge clk) if (chmap_we) chmap[chmap_addr] <= chmap_data;
+  assign ch_pow = chacc;
   logic        row_last;                       // поточний блок завершує рядок
   logic [15:0] blocks_lo;
   logic [31:0] blocks;
@@ -270,6 +294,12 @@ module dsp_spectrum #(
   logic [12:0] wf_waddr;
   logic [1:0]  wf_lane;
   logic [7:0]  wf_wdata;
+  logic        last_we;
+  // останній рядок (завжди, і коли кільце заморожене)
+  logic [7:0]  lr0 [0:31];
+  logic [7:0]  lr1 [0:31];
+  logic [7:0]  lr2 [0:31];
+  logic [7:0]  lr3 [0:31];
 
   // накопичувачі: один порт запису (рядок або обнулення), синхронне читання
   // за адресою біна в такті F_OUT -> дані в такті o1, разом із даними банку
@@ -278,7 +308,7 @@ module dsp_spectrum #(
   logic [31:0] acc_wdata, acc_rd;
   always_ff @(posedge clk) begin
     if (acc_we) acc[acc_waddr] <= acc_wdata;
-    acc_rd <= acc[o_n];
+    acc_rd <= acc[o_n[7:1]];
   end
   wire [31:0] o_shift  = o_sum >> cfg_wf_shift;
   wire [7:0]  o_log    = spec_log(o_shift);
@@ -287,6 +317,7 @@ module dsp_spectrum #(
     a_we_f <= 1'b0;
     b_we_f <= 1'b0;
     wf_we  <= 1'b0;
+    last_we <= 1'b0;
     acc_we <= 1'b0;
     if (rst) begin
       fst      <= F_IDLE;
@@ -298,8 +329,10 @@ module dsp_spectrum #(
       rows   <= '0;
       clr_act <= 1'b1;
       clr_n   <= '0;
+      ch_done <= 1'b0;
     end
     else begin
+      ch_done <= 1'b0;
       //------------------------------------------------------- метелики
       // R: адреси на порти A/B (банк fb)
       m_v <= 1'b0;
@@ -359,6 +392,7 @@ module dsp_spectrum #(
             fst      <= F_OUT;
             o_n      <= '0;
             row_last <= (blocks_lo == (16'd1 << cfg_wf_shift) - 16'd1);
+            for (int c = 0; c < 15; c++) chacc[c] <= '0;
           end
           else begin
             stage    <= stage + 1'b1;
@@ -367,10 +401,10 @@ module dsp_spectrum #(
             fst      <= F_RUN;
           end
         end
-        //------------------------------- 128 центральних бінів -> рядок
+        //---------------------- 256 бінів -> 128 пар -> рядок, суми каналів
         F_OUT: begin
           o_n      <= o_n + 1'b1;
-          if (o_n == 7'd127) begin
+          if (o_n == 8'd255) begin
             fst   <= F_OUT_DRAIN;
             drain <= 3'd3;
           end
@@ -380,6 +414,7 @@ module dsp_spectrum #(
           else begin
             fst      <= F_IDLE;
             fft_busy <= 1'b0;
+            ch_done  <= 1'b1;
             if (row_last) begin
               blocks_lo <= '0;
               if (row_wr_ok) rows <= rows + 1'b1;
@@ -391,31 +426,40 @@ module dsp_spectrum #(
         default: fst <= F_IDLE;
       endcase
 
-      // конвеєр читання: такт 1 -- дані BRAM -> |re|+|im|, + накопичене
+      // конвеєр читання: такт 1 -- дані BRAM -> |re|+|im|; парний бін
+      // запам'ятовується, на непарному -- max пари + накопичене; суми каналів
       o1_v <= (fst == F_OUT);
       o1_n <= o_n;
+      o1_k <= o_addr;
       if (o1_v) begin
         logic signed [15:0] re, im;
-        logic [16:0] m;
+        logic [16:0] m, mx;
+        logic [3:0]  ch;
         re = fa_dout[15:0];
         im = fa_dout[31:16];
         m  = 17'(re < 0 ? -32'(re) : 32'(re)) + 17'(im < 0 ? -32'(im) : 32'(im));
-        o_sum <= acc_rd + ((m > 17'd65535) ? 32'd65535 : 32'(m));
+        m  = (m > 17'd65535) ? 17'd65535 : m;
+        ch = chmap[o1_k];
+        if (ch != 4'd15) chacc[ch] <= chacc[ch] + 24'(m);
+        if (!o1_n[0]) m_even <= m;
+        else begin
+          mx    = (m > m_even) ? m : m_even;
+          o_sum <= acc_rd + 32'(mx);
+        end
       end
-      o2_v <= o1_v;
+      o2_v <= o1_v && o1_n[0];
       o2_n <= o1_n;
-      // такт 2: запис накопичувача / рядка / max hold
+      // такт 2: запис накопичувача / рядка (точка = o2_n / 2)
       if (o2_v) begin
         acc_we    <= 1'b1;
-        acc_waddr <= o2_n;
+        acc_waddr <= o2_n[7:1];
         acc_wdata <= row_last ? 32'd0 : o_sum;
         if (row_last) begin
-          if (row_wr_ok) begin
-            wf_we    <= 1'b1;
-            wf_waddr <= {rows[7:0], o2_n[6:2]};       // кільце: рядок % 256
-            wf_lane  <= o2_n[1:0];
-            wf_wdata <= o_log;
-          end
+          wf_we    <= row_wr_ok && !cfg_freeze;
+          last_we  <= 1'b1;
+          wf_waddr <= {rows[7:0], o2_n[7:3]};         // кільце: рядок % 256
+          wf_lane  <= o2_n[2:1];
+          wf_wdata <= o_log;
         end
       end
 
@@ -453,12 +497,24 @@ module dsp_spectrum #(
     end
   end
 
+  always_ff @(posedge clk) begin
+    if (last_we) begin
+      case (wf_lane)
+        2'd0: lr0[wf_waddr[4:0]] <= wf_wdata;
+        2'd1: lr1[wf_waddr[4:0]] <= wf_wdata;
+        2'd2: lr2[wf_waddr[4:0]] <= wf_wdata;
+        default: lr3[wf_waddr[4:0]] <= wf_wdata;
+      endcase
+    end
+  end
+
   // читання з AXI
   always_ff @(posedge clk) begin
     if (rd_en) begin
       rd_wf_data <= {wf3[rd_wf_addr], wf2[rd_wf_addr], wf1[rd_wf_addr], wf0[rd_wf_addr]};
     end
   end
+  assign rd_last_data = {lr3[rd_last_addr], lr2[rd_last_addr], lr1[rd_last_addr], lr0[rd_last_addr]};
 
   assign st_rows = rows;
   assign st_busy = fft_busy || pend || clr_act;

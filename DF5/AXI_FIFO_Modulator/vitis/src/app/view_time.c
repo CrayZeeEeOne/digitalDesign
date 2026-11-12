@@ -1,5 +1,6 @@
 #include "app/view_time.h"
 #include "gfx/plot.h"
+#include "app/frame.h"
 
 /* Bit period in 1/64 sample (Fs / bitrate * 64 = 15000 at 4.5 MS/s, 19200 bit/s). */
 #define BIT_T64 ((CFG_SAMPLE_RATE_HZ * 64u) / CFG_BITRATE)
@@ -186,7 +187,24 @@ static char hex_digit(uint8_t v) { return (char)(v < 10u ? '0' + (int)v : 'A' + 
 
 #define BITS_TEXT_W 52u        /* characters per text line: erases the old line */
 
-void view_bits(tft_t *tft, const cap_data_t *c, const zoom_t *z, int full)
+/* Small line builder for the text under the waveform. */
+typedef struct { char buf[BITS_TEXT_W + 1u]; char *p; } line_t;
+static void l_start(line_t *l) { l->p = l->buf; *l->p = '\0'; }
+static void l_str(line_t *l, const char *s) { while (*s && l->p < l->buf + BITS_TEXT_W) *l->p++ = *s++; *l->p = '\0'; }
+static void l_u32(line_t *l, uint32_t v) { char t[11]; plot_u32_to_str(t, v); l_str(l, t); }
+static void l_hex8(line_t *l, uint8_t v) { char t[3] = { hex_digit((uint8_t)(v >> 4)), hex_digit((uint8_t)(v & 15u)), 0 }; l_str(l, t); }
+
+/* "866.700M" */
+static void l_mhz(line_t *l, uint32_t khz)
+{
+    char t[4] = { (char)('0' + (khz % 1000u) / 100u), (char)('0' + (khz % 100u) / 10u), (char)('0' + khz % 10u), 0 };
+    l_u32(l, khz / 1000u);
+    l_str(l, ".");
+    l_str(l, t);
+    l_str(l, "M");
+}
+
+void view_bits(tft_t *tft, const cap_data_t *c, const zoom_t *z, int full, const rx_stats_t *st)
 {
     plot_col_t *colp = &plot_scratch.col;
     plot_box_t b = plot_area(tft);
@@ -195,6 +213,7 @@ void view_bits(tft_t *tft, const cap_data_t *c, const zoom_t *z, int full)
     int16_t pkx[CAP_PKTS];
     uint16_t x, y;
     uint8_t p;
+    line_t l;
 
     (void)full;
     wave.h = 76u;
@@ -225,50 +244,85 @@ void view_bits(tft_t *tft, const cap_data_t *c, const zoom_t *z, int full)
     time_axis(tft, &wave, z);
 
     /*
-     * Packets as text: bit count; decoded by the demodulator (sync found): CRC
-     * status, the start of the bytes as text and the bytes in hex; otherwise the
-     * raw slicer bits in hex (first bit = MSB). Every line is padded to the full
-     * width, so a shorter new line erases the old one.
+     * Packets as text, three lines each. Decoded by the demodulator (sync found):
+     * channel, radio CRC16, CRC8 of the alarm frame; number, command, alarm
+     * counter, zones; the 16 bytes in hex. Otherwise "NO SYNC" and the raw
+     * slicer bits in hex. Every line is padded to the full width, so a shorter
+     * new line erases the old one.
      */
-    y = (uint16_t)(wave.y0 + wave.h + 16u);
+    y = (uint16_t)(wave.y0 + wave.h + 14u);
     for (p = 0u; p < CAP_PKTS; p++) {
         const cap_pkt_t *k = &c->pkt[p];
         const cap_dec_t *d = (p < c->ndec) ? &c->dec[p] : 0;
-        const uint8_t *bytes = d ? d->bytes : k->bits;
-        char line[BITS_TEXT_W + 1u];
-        char *q = line;
-        uint16_t nbytes = d ? d->nbytes : (uint16_t)(k->nbits / 8u), i;
+        frame_t f;
+        uint16_t i, nbytes;
 
         if (p >= c->npkt) {
             plot_text_pad(tft, b.x0, y, (p == 0u) ? "NO PACKET IN CAPTURE" : "", BITS_TEXT_W, TFT_RED);
             plot_text_pad(tft, b.x0, (uint16_t)(y + 10u), "", BITS_TEXT_W, TFT_GRAY);
-            y = (uint16_t)(y + 28u);
+            plot_text_pad(tft, b.x0, (uint16_t)(y + 20u), "", BITS_TEXT_W, TFT_GRAY);
+            y = (uint16_t)(y + 32u);
             continue;
         }
-        *q++ = 'P'; *q++ = (char)('1' + p); *q++ = ':'; *q++ = ' ';
-        q = plot_u32_to_str(q, k->nbits);
-        *q++ = ' '; *q++ = 'B'; *q++ = 'I'; *q++ = 'T'; *q++ = 'S'; *q = '\0';
-        plot_text_pad(tft, b.x0, y, line, 14u, TFT_WHITE);
-        plot_text_pad(tft, (uint16_t)(b.x0 + 84u), y, d ? (d->crc_ok ? "CRC OK" : "CRC ERROR") : "NO SYNC", 11u,
-                      d ? (d->crc_ok ? TFT_GREEN : TFT_RED) : TFT_GRAY);
-        q = line;
-        if (d) {
-            *q++ = '"';
-            for (i = 0u; i < 10u && i < nbytes; i++)
-                *q++ = (bytes[i] >= 0x20u && bytes[i] < 0x60u) ? (char)bytes[i] : '.';
-            *q++ = '"';
-        }
-        *q = '\0';
-        plot_text_pad(tft, (uint16_t)(b.x0 + 150u), y, line, 12u, TFT_YELLOW);
 
-        if (nbytes > 25u) nbytes = 25u;
-        q = line;
-        for (i = 0u; i < nbytes; i++) {
-            *q++ = hex_digit((uint8_t)(bytes[i] >> 4));
-            *q++ = hex_digit((uint8_t)(bytes[i] & 15u));
+        /* line 1: P1 866.700M  CRC16 OK  CRC8 OK   (or the bit count without sync) */
+        l_start(&l);
+        l_str(&l, "P");
+        l_u32(&l, p + 1u);
+        l_str(&l, " ");
+        if (d) {
+            frame_parse(d, &f);
+            l_mhz(&l, frame_ch_khz(d->ch));
+            plot_text_pad(tft, b.x0, y, l.buf, 13u, TFT_WHITE);
+            plot_text_pad(tft, (uint16_t)(b.x0 + 78u), y, d->crc_ok ? "CRC16 OK" : "CRC16 ERR", 10u,
+                          d->crc_ok ? TFT_GREEN : TFT_RED);
+            plot_text_pad(tft, (uint16_t)(b.x0 + 138u), y, !f.complete ? "NO FRAME" : f.crc8_ok ? "CRC8 OK" : "CRC8 ERR",
+                          BITS_TEXT_W - 23u, (f.complete && f.crc8_ok) ? TFT_GREEN : TFT_RED);
+        } else {
+            l_u32(&l, k->nbits);
+            l_str(&l, " BITS  NO SYNC");
+            plot_text_pad(tft, b.x0, y, l.buf, BITS_TEXT_W, TFT_GRAY);
         }
-        *q = '\0';
-        plot_text_pad(tft, b.x0, (uint16_t)(y + 10u), line, BITS_TEXT_W, d ? TFT_GREEN : TFT_GRAY);
-        y = (uint16_t)(y + 28u);
+
+        /* line 2: #3561 ALARM 233 ZONES 07 FIELD 04 */
+        l_start(&l);
+        if (d && f.complete) {
+            l_str(&l, "#");
+            l_u32(&l, f.pkt_num);
+            l_str(&l, (f.cmd == FRAME_CMD_ALARM) ? " ALARM " : " CMD ");
+            if (f.cmd != FRAME_CMD_ALARM) { l_hex8(&l, f.cmd); l_str(&l, " CNT "); }
+            l_u32(&l, f.alarm_cnt);
+            l_str(&l, "  ZONES ");
+            l_hex8(&l, f.zones);
+            l_str(&l, "  FIELD ");
+            l_hex8(&l, f.alarm);
+            l_str(&l, "  SENSOR ");
+            l_u32(&l, f.num_sensor);
+        }
+        plot_text_pad(tft, b.x0, (uint16_t)(y + 10u), l.buf, BITS_TEXT_W, TFT_YELLOW);
+
+        /* line 3: the bytes in hex */
+        nbytes = d ? d->nbytes : (uint16_t)(k->nbits / 8u);
+        if (nbytes > 25u) nbytes = 25u;
+        l_start(&l);
+        for (i = 0u; i < nbytes; i++) l_hex8(&l, d ? d->bytes[i] : k->bits[i]);
+        plot_text_pad(tft, b.x0, (uint16_t)(y + 20u), l.buf, BITS_TEXT_W, d ? TFT_GREEN : TFT_GRAY);
+        y = (uint16_t)(y + 32u);
+    }
+
+    /* statistics since the file started */
+    if (st) {
+        l_start(&l);
+        l_str(&l, "RX ");
+        l_u32(&l, st->rx);
+        l_str(&l, "  CRC16 ");
+        l_u32(&l, st->crc16);
+        l_str(&l, "  CRC8 ");
+        l_u32(&l, st->crc8);
+        l_str(&l, "  HOP ");
+        l_u32(&l, st->hop_ok);
+        l_str(&l, "/");
+        l_u32(&l, st->hop_n);
+        plot_text_pad(tft, b.x0, y, l.buf, BITS_TEXT_W, TFT_CYAN);
     }
 }

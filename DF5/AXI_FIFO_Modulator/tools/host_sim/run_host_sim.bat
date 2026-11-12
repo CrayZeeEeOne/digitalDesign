@@ -31,11 +31,11 @@ for %%G in ("%GCC%") do set PATH=%%~dpG;%PATH%
 
 if not exist "%OUT%" mkdir "%OUT%"
 
-"%GCC%" -O1 -Wall -Wextra -I"%SRC%" -I"%MODEL%" -I"%HERE%." ^
+"%GCC%" -O1 -Wall -Wextra -DHOST_SIM -I"%SRC%" -I"%MODEL%" -I"%HERE%." ^
     "%HERE%host_main.c" "%HERE%st7789_emu.c" ^
     "%SRC%\gfx\tft.c" "%SRC%\gfx\font5x7.c" "%SRC%\gfx\plot.c" ^
     "%MODEL%\dsp\*.c" "%MODEL%\source\*.c" "%SRC%\app\*.c" ^
-    "%SRC%\hal\sd_card.c" "%SRC%\lib\fatfs\*.c" "%HERE%axi_qspi_stub.c" ^
+    "%SRC%\hal\sd_card.c" "%SRC%\lib\fatfs\*.c" "%HERE%sd_host_stub.c" ^
     -o "%OUT%\host_sim.exe"
 if errorlevel 1 exit /b %errorlevel%
 

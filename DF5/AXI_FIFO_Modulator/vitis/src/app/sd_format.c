@@ -28,7 +28,7 @@ static int fail(sd_format_result_t *r, const char *step, FRESULT fr)
     return 0;
 }
 
-void sd_format_run(sd_format_result_t *r, sd_card_t *sd, axi_qspi_t *spi,
+void sd_format_run(sd_format_result_t *r, sd_card_t *sd, sd_host_t *host,
                    uint32_t (*ticks)(void), uint32_t ticks_hz)
 {
     MKFS_PARM opt = { FM_FAT32, 0, 0, 0, 0 };
@@ -48,7 +48,7 @@ void sd_format_run(sd_format_result_t *r, sd_card_t *sd, axi_qspi_t *spi,
     r->free_kb = 0u;
 
     sd->type = SD_TYPE_NONE;                 /* disk_initialize() starts the card afresh */
-    diskio_sd_attach(sd, spi);
+    diskio_sd_attach(sd, host);
 
     t0 = ticks();
     fr = f_mkfs("", &opt, work, sizeof(work));

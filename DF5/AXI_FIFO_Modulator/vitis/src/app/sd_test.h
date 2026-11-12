@@ -35,7 +35,7 @@ typedef struct {
 } sd_info_t;
 
 /* ticks(): free-running AXI clock counter, ticks_hz its rate (read speed). */
-void sd_test_run(sd_info_t *info, sd_card_t *sd, axi_qspi_t *spi,
+void sd_test_run(sd_info_t *info, sd_card_t *sd, sd_host_t *host,
                  uint32_t (*ticks)(void), uint32_t ticks_hz);
 
 #endif
