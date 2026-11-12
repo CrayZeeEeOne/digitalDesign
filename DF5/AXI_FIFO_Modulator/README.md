@@ -1,12 +1,15 @@
 # DF5 — TFT / SD / I/Q Replay
 
-Проєкт на MicroBlaze: TFT через SPI, SD-карта з FatFs, відтворення та
-демодуляція I/Q-записів.
+Проєкт на MicroBlaze + RTL: справжній I/Q-запис (Pluto SDR, пакети GFSK, що
+стрибають по 15 каналах) іде з microSD нативною 4-бітною шиною прямо в DSP у
+FPGA у реальному часі; DSP знаходить канал кожного пакета, демодулює, знебілює
+PN9 і перевіряє CRC; MicroBlaze малює 6 екранів на TFT ST7789.
 
 Поточний стан, історія версій і відомі проблеми — у [`STATUS.md`](STATUS.md).
 Повний опис роботи RTL і прошивки, аж до окремих блоків коду, — у
 [`docs/how_it_works.md`](docs/how_it_works.md): з ним не треба відкривати джерела.
-Старіший огляд — у [`docs/architecture.md`](docs/architecture.md).
+DSP і SD-контролер у PL, мапи регістрів — у [`docs/dsp_rtl.md`](docs/dsp_rtl.md).
+Старіший огляд (до переходу DSP у залізо) — у [`docs/architecture.md`](docs/architecture.md).
 
 ## Структура
 
@@ -42,7 +45,8 @@ AXI_FIFO_Modulator/
 ```bat
 cd scripts
 
-build.bat              створити або оновити проєкт
+build.bat              створити або оновити проєкт і Block Design (без синтезу)
+build.bat -bd          перебудувати BD з create_bd.tcl, далі все підряд (після змін BD/модулів у ньому)
 build.bat -syn         + синтез
 build.bat -impl        + implementation і bitstream
 build.bat -xsa         + експорт XSA у vitis\platform\
@@ -71,37 +75,44 @@ Block Design редагується в GUI (`build.bat -gui`).
 
 | Блок | Стан | Документ |
 |---|---|---|
-| 1 — TFT: SPI RTL і C-драйвер | в роботі | [`docs/block1_tft.md`](docs/block1_tft.md) |
-| 2 — SD-карта: Vivado IP і FatFs | — | |
-| 3 — I/Q replay, Viewer, Demodulator | — | |
+| 1 — TFT: SPI RTL і C-драйвер | працює на платі; `TFT TEST` і перевірка SPI осцилографом -- ще ні | [`docs/block1_tft.md`](docs/block1_tft.md) |
+| 2 — SD-карта і FatFs | працює на платі (нативна шина, `sd_host`); `test.img` -- ще ні | [`docs/dsp_rtl.md`](docs/dsp_rtl.md) |
+| 3 — I/Q replay, демодулятор, екрани | працює на платі в реальному часі, 59/59 пакетів запису | [`docs/how_it_works.md`](docs/how_it_works.md) |
 
-## Block 3 signal viewer (MicroBlaze)
+Версії та що в кожній -- [`STATUS.md`](STATUS.md).
 
-The firmware records one capture with two packets and shows it on the ST7789 as four screens,
-all calculations on MicroBlaze:
+## Block 3 signal viewer
 
-1. `RAW I/Q` -- input I and Q over time, packets marked P1/P2
-2. `BITS` -- bits decoded from both packets: waveform + hex
-3. `FFT` -- level in dBFS vs frequency (max hold), peak marker
-4. `WATERFALL` -- frequency vs time
+The PL does all the signal processing; the firmware plays the file from the card into it and
+draws. The card holds `CAPTURE.IQ8` (int8 I/Q, 4.5 MS/s; make it with
+`tools/iq16to8.py` from the int16 capture). It plays once in real time, then the screens stay
+(END); K1+K2 plays it again.
+
+1. `RAW I/Q` -- input I and Q, 21.8 ms around the last packet
+2. `BITS` -- slicer bits of the packet; channel, CRC16, CRC8, packet number, alarm counter; receive statistics
+3. `FFT` -- level in dBFS over the whole band 865.15..869.65 MHz, peak marker
+4. `WATERFALL` -- the whole file, 0..16.7 s top to bottom
+5. `SD CARD` -- the card test, root directory, the file
+6. `FFT+WF` -- FFT above, waterfall below
 
 Keys:
-- K1 short -- next screen; K2 short -- zoom x1 -> x2 -> x4 -> x8 -> x16 on the current screen
-- K1 held -- scroll the zoomed plot back; K2 held -- scroll forward
+- K1 short -- next screen; K2 short -- pause while playing, zoom x1 -> x16 otherwise
+- K1 / K2 held -- scroll the zoomed plot back / forward
+- K1 + K2 -- go on after a pause, play the file again after it ended
 
 Firmware layout (`vitis/src`, dependencies only point down the list):
 
 | Folder | What lives there |
 |---|---|
-| `main.c`, `config.h` | init + main loop; all system parameters (Fs, frequencies, capture length) |
-| `app/` | `viewer` (screens), `keys` (short press / hold), `zoom`, `capture.h` (the recording, filled by the PL), `view_time` (raw, bits), `view_freq` (FFT, waterfall), SD test / format |
+| `main.c`, `config.h` | states and main loop; all system parameters (Fs, channels, file, thresholds) |
+| `app/` | `viewer` (screens), `view_time` (raw, bits), `view_freq` (FFT, waterfall), `view_sd`, `keys`, `zoom`, `frame` (the Alarm-Beacon frame), `sd_iq` (file -> PL stream), SD test / format |
 | `gfx/` | ST7789 driver `tft`, font, `plot` primitives |
-| `hal/` | drivers of the PL blocks: `spi_tft`, `system_ctrl`, `dsp_rtl` (the whole DSP, see `docs/dsp_rtl.md`), `axi_qspi` + `sd_card` |
+| `hal/` | drivers of the PL blocks: `spi_tft`, `system_ctrl`, `dsp_rtl` (the whole DSP), `sd_host` (microSD in the PL), `sd_card` (SD protocol) |
 | `lib/fatfs/` | FatFs R0.15a + diskio for the microSD card |
 | `../bsp/` | `crt0.S`, linker script, `xparameters.h` with BD addresses |
 
-The DSP itself runs in the PL (`vivado/sources/rtl/dsp_*.sv`). Its C model -- the
-same chain in software, for the host simulator only -- is in `tools/host_sim/model/`.
+The DSP itself runs in the PL (`vivado/sources/rtl/dsp_*.sv`, `demod_*.sv`), the SD host in
+`sd_host.sv`. A C model of the DSP -- for the host simulator only -- is in `tools/host_sim/model/`.
 
 All screens can be rendered on a PC, without the board:
 `tools/host_sim/run_host_sim.bat` (compares with `tools/host_sim/golden.md5`).
